@@ -76,6 +76,9 @@ modeling:
     - "logistic_only"
     - "global_fkpp"
   esm_steps_per_year: 12
+  fkpp_steps_per_year: 12
+  fkpp_laplacian_normalization: "spectral"
+  fkpp_optimizer_maxiter: 80
   parameter_bounds:
     rho: [0.0, 10.0]
     beta: [0.0, 10.0]
@@ -111,3 +114,7 @@ outputs:
   esm_metrics_table: "esm_forecast_metrics.csv"
   esm_metrics_summary: "esm_forecast_metrics_summary.csv"
   esm_fit_report: "esm_fit_report.json"
+  fkpp_predictions_table: "fkpp_forecast_predictions.csv"
+  fkpp_metrics_table: "fkpp_forecast_metrics.csv"
+  fkpp_metrics_summary: "fkpp_forecast_metrics_summary.csv"
+  fkpp_fit_report: "fkpp_fit_report.json"
