@@ -103,3 +103,4 @@ outputs:
   connectome_report: "connectome_report.json"
   predictions_table: "forecast_predictions.csv"
   metrics_table: "forecast_metrics.csv"
+  ndm_fit_report: "ndm_fit_report.json"
