@@ -34,6 +34,42 @@ class SubjectSplit:
     test_rids: list[str]
 
 
+@dataclass
+class MinMaxStateScaler:
+    """Per-region min-max scaler for bounded state-space models."""
+
+    lower: np.ndarray
+    upper: np.ndarray
+    epsilon: float = 1.0e-8
+
+    @classmethod
+    def fit(cls, *arrays: np.ndarray, epsilon: float = 1.0e-8) -> "MinMaxStateScaler":
+        if not arrays:
+            raise ValueError("At least one array is required to fit MinMaxStateScaler.")
+        normalized_arrays = [np.asarray(array, dtype=float) for array in arrays]
+        region_count = normalized_arrays[0].shape[1]
+        for array in normalized_arrays:
+            if array.ndim != 2:
+                raise ValueError("Scaler inputs must be two-dimensional arrays.")
+            if array.shape[1] != region_count:
+                raise ValueError("All scaler inputs must have the same number of regions.")
+        stacked = np.vstack(normalized_arrays)
+        return cls(lower=np.min(stacked, axis=0), upper=np.max(stacked, axis=0), epsilon=epsilon)
+
+    @property
+    def scale(self) -> np.ndarray:
+        return np.maximum(self.upper - self.lower, self.epsilon)
+
+    def transform(self, values: np.ndarray, *, clip: bool = True) -> np.ndarray:
+        transformed = (np.asarray(values, dtype=float) - self.lower) / self.scale
+        if clip:
+            return np.clip(transformed, 0.0, 1.0)
+        return transformed
+
+    def inverse_transform(self, values: np.ndarray) -> np.ndarray:
+        return np.asarray(values, dtype=float) * self.scale + self.lower
+
+
 def load_labeled_matrix(path: str | Path) -> tuple[list[str], np.ndarray]:
     with Path(path).open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.reader(handle)

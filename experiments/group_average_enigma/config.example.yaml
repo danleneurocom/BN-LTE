@@ -72,10 +72,13 @@ modeling:
   test_fraction: 0.2
   models:
     - "ndm"
+    - "esm"
     - "logistic_only"
     - "global_fkpp"
+  esm_steps_per_year: 12
   parameter_bounds:
     rho: [0.0, 10.0]
+    beta: [0.0, 10.0]
     alpha: [0.0, 10.0]
 
 evaluation:
@@ -104,3 +107,7 @@ outputs:
   predictions_table: "forecast_predictions.csv"
   metrics_table: "forecast_metrics.csv"
   ndm_fit_report: "ndm_fit_report.json"
+  esm_predictions_table: "esm_forecast_predictions.csv"
+  esm_metrics_table: "esm_forecast_metrics.csv"
+  esm_metrics_summary: "esm_forecast_metrics_summary.csv"
+  esm_fit_report: "esm_fit_report.json"
