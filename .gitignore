@@ -1,2 +1,43 @@
 ADNI/
 HCP_1200/
+myenv/
+DS_Store/
+
+# macOS / editor noise
+.DS_Store
+*.swp
+*.swo
+.ipynb_checkpoints/
+
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local datasets and downloaded connectomes
+ADNI_images/
+HCP/
+ENIGMA/
+enigma/
+data/
+raw_data/
+
+# Local configuration; keep *.example.* files tracked.
+.env
+.env.*
+*.local.yaml
+*.local.yml
+config.local.*
+experiments/**/config.yaml
+
+# Generated experiment artifacts
+experiments/**/output/
+experiments/**/outputs/
+experiments/**/results/
+experiments/**/figures/
+experiments/**/cache/
