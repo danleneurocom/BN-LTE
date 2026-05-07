@@ -1,0 +1,97 @@
+# Copy this file to config.yaml and edit paths for your machine.
+# config.yaml is ignored by git so local data paths stay private.
+
+experiment:
+  name: group_average_enigma
+  description: ADNI longitudinal tau forecasting with ENIGMA group-average connectivity
+  random_seed: 20260507
+
+paths:
+  # Use your local ADNI Study Files directory. This example matches the sibling
+  # folder layout currently available near this repo.
+  adni_dir: "../BRAIN DATA/ADNI"
+  output_dir: "experiments/group_average_enigma/output"
+  cache_dir: "experiments/group_average_enigma/cache"
+  enigma_cache_dir: "experiments/group_average_enigma/cache/enigma"
+
+adni_files:
+  tau_analysis: "PET_Image_Analysis/UCBERKELEY_TAU_6MM_03May2026.csv"
+  tau_metadata: "PET_Image_Acquisition/TAUMETA_03May2026.csv"
+  tau_qc: "PET_Image_Quality/TAUQC_03May2026.csv"
+  amyloid_analysis: "PET_Image_Analysis/UCBERKELEY_AMY_6MM_03May2026.csv"
+  diagnosis: "Diagnosis/DXSUM_03May2026.csv"
+  demographics: "Subject_Demographics/PTDEMOG_03May2026.csv"
+  apoe: "Genetic_APOE/APOERES_03May2026.csv"
+  cognition:
+    - "Neuropsychological/MMSE_03May2026.csv"
+    - "Neuropsychological/CDR_03May2026.csv"
+    - "Neuropsychological/ADAS_03May2026.csv"
+    - "Neuropsychological/FAQ_03May2026.csv"
+  biomarkers:
+    - "Biospecimen_Results/UPENNBIOMK_MASTER_03May2026.csv"
+    - "Biospecimen_Results/UGOTPTAU181_06_18_20_03May2026.csv"
+  mri_structural:
+    - "MR_Image_Analysis/UCSFFSX7_03May2026.csv"
+    - "MR_Image_Analysis/UCSFFSX6_03May2026.csv"
+
+cohort:
+  min_tau_timepoints: 2
+  require_same_tracer: true
+  tau_pass_values: ["2"]
+  allow_partial_tau_qc: false
+  baseline_policy: "first_usable_tau"
+  target_policy: "next_and_last_tau"
+  time_unit: "years"
+  analysis_groups:
+    - "A_plus_T_minus"
+    - "A_plus_T_plus"
+    - "CN"
+    - "MCI"
+    - "AD"
+    - "stable_controls"
+    - "converters"
+
+connectome:
+  source: "enigma"
+  parcellation: "aparc"
+  include_subcortex: false
+  symmetrize: true
+  zero_diagonal: true
+  edge_weight_transform: "none"
+  laplacian: "combinatorial"
+
+region_mapping:
+  mapping_file: "experiments/group_average_enigma/adni_to_enigma_aparc_mapping.csv"
+  require_unique_matches: true
+  require_left_right_consistency: true
+  fail_on_missing_regions: true
+
+modeling:
+  split_level: "subject"
+  test_fraction: 0.2
+  models:
+    - "ndm"
+    - "logistic_only"
+    - "global_fkpp"
+  parameter_bounds:
+    rho: [0.0, 10.0]
+    alpha: [0.0, 10.0]
+
+evaluation:
+  primary_metric: "subject_spearman"
+  metrics:
+    - "subject_spearman"
+    - "regional_pearson"
+    - "regional_spearman"
+    - "delta_suvr_correlation"
+    - "mae"
+    - "rmse"
+    - "top_k_vulnerable_overlap"
+  top_k_values: [5, 10]
+
+outputs:
+  cohort_table: "cohort_longitudinal_tau.csv"
+  region_mapping_report: "region_mapping_report.csv"
+  connectome_report: "connectome_report.json"
+  predictions_table: "forecast_predictions.csv"
+  metrics_table: "forecast_metrics.csv"
