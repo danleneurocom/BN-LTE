@@ -1,0 +1,4 @@
+# The analysis notebook uses only the Python standard library for data processing.
+# These packages provide the notebook runtime.
+jupyterlab>=4.2
+ipykernel>=6.29
