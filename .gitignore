@@ -27,6 +27,7 @@ enigma/
 data/
 raw_data/
 BRAIN_DATA/
+BRAIN DATA/
 
 # Local configuration; keep *.example.* files tracked.
 .env

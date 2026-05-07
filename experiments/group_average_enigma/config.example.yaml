@@ -7,14 +7,15 @@ experiment:
   random_seed: 20260507
 
 paths:
-  # Use your local ADNI Study Files directory. This example matches the sibling
-  # folder layout currently available near this repo.
-  adni_dir: "../BRAIN DATA/ADNI"
+  # Use your local ADNI Study Files directory. This example assumes the dataset
+  # folder sits inside the repo root and is ignored by git.
+  adni_dir: "BRAIN DATA/ADNI"
   output_dir: "experiments/group_average_enigma/output"
   cache_dir: "experiments/group_average_enigma/cache"
   enigma_cache_dir: "experiments/group_average_enigma/cache/enigma"
 
 adni_files:
+  enrollment_roster: "Enrollment/ROSTER_03May2026.csv"
   tau_analysis: "PET_Image_Analysis/UCBERKELEY_TAU_6MM_03May2026.csv"
   tau_metadata: "PET_Image_Acquisition/TAUMETA_03May2026.csv"
   tau_qc: "PET_Image_Quality/TAUQC_03May2026.csv"
@@ -91,6 +92,9 @@ evaluation:
 
 outputs:
   cohort_table: "cohort_longitudinal_tau.csv"
+  forecast_pairs_table: "cohort_forecast_pairs.csv"
+  tau_observations_table: "cohort_tau_observations.csv"
+  row_counts: "cohort_row_counts.json"
   region_mapping_report: "region_mapping_report.csv"
   connectome_report: "connectome_report.json"
   predictions_table: "forecast_predictions.csv"
