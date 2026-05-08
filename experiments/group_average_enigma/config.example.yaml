@@ -69,7 +69,9 @@ region_mapping:
 
 modeling:
   split_level: "subject"
+  validation_fraction: 0.2
   test_fraction: 0.2
+  selection_stat: "median"
   models:
     - "ndm"
     - "esm"
@@ -118,3 +120,12 @@ outputs:
   fkpp_metrics_table: "fkpp_forecast_metrics.csv"
   fkpp_metrics_summary: "fkpp_forecast_metrics_summary.csv"
   fkpp_fit_report: "fkpp_fit_report.json"
+  model_selection_pair_metrics: "model_selection_pair_metrics_train_validation.csv"
+  model_selection_metrics_summary: "model_selection_metrics_summary.csv"
+  model_selection_selected_predictions: "model_selection_selected_predictions.csv"
+  model_selection_selected_metrics: "model_selection_selected_metrics.csv"
+  model_selection_selected_metrics_summary: "model_selection_selected_metrics_summary.csv"
+  model_selection_report: "model_selection_report.json"
+  baseline_comparison_pair_metrics: "baseline_comparison_pair_metrics.csv"
+  baseline_comparison_metrics_summary: "baseline_comparison_metrics_summary.csv"
+  baseline_comparison_report: "baseline_comparison_report.json"

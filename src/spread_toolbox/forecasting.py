@@ -35,6 +35,16 @@ class SubjectSplit:
 
 
 @dataclass
+class SubjectTrainValidationTestSplit:
+    train_indices: np.ndarray
+    validation_indices: np.ndarray
+    test_indices: np.ndarray
+    train_rids: list[str]
+    validation_rids: list[str]
+    test_rids: list[str]
+
+
+@dataclass
 class MinMaxStateScaler:
     """Per-region min-max scaler for bounded state-space models."""
 
@@ -178,16 +188,72 @@ def make_subject_split(
     )
 
 
+def make_subject_train_validation_test_split(
+    pairs: list[dict[str, str]],
+    *,
+    validation_fraction: float,
+    test_fraction: float,
+    random_seed: int,
+) -> SubjectTrainValidationTestSplit:
+    if validation_fraction <= 0.0 or test_fraction <= 0.0:
+        raise ValueError("validation_fraction and test_fraction must be positive.")
+    if validation_fraction + test_fraction >= 1.0:
+        raise ValueError("validation_fraction + test_fraction must be less than 1.")
+
+    unique_rids = sorted({pair["RID"] for pair in pairs}, key=lambda value: int(value) if value.isdigit() else value)
+    if len(unique_rids) < 3:
+        raise ValueError("At least three unique subjects are required for train/validation/test splitting.")
+
+    rng = np.random.default_rng(random_seed)
+    shuffled = np.asarray(unique_rids, dtype=object)
+    rng.shuffle(shuffled)
+
+    validation_count = max(1, int(round(len(shuffled) * validation_fraction)))
+    test_count = max(1, int(round(len(shuffled) * test_fraction)))
+    if validation_count + test_count >= len(shuffled):
+        raise ValueError("Split fractions leave no subjects for training.")
+
+    test_rids = sorted(str(value) for value in shuffled[:test_count])
+    validation_rids = sorted(str(value) for value in shuffled[test_count : test_count + validation_count])
+    train_rids = sorted(str(value) for value in shuffled[test_count + validation_count :])
+
+    train_set = set(train_rids)
+    validation_set = set(validation_rids)
+    test_set = set(test_rids)
+
+    train_indices = []
+    validation_indices = []
+    test_indices = []
+    for index, pair in enumerate(pairs):
+        rid = pair["RID"]
+        if rid in test_set:
+            test_indices.append(index)
+        elif rid in validation_set:
+            validation_indices.append(index)
+        elif rid in train_set:
+            train_indices.append(index)
+        else:
+            raise ValueError(f"RID {rid} was not assigned to a split.")
+
+    return SubjectTrainValidationTestSplit(
+        train_indices=np.asarray(train_indices, dtype=int),
+        validation_indices=np.asarray(validation_indices, dtype=int),
+        test_indices=np.asarray(test_indices, dtype=int),
+        train_rids=train_rids,
+        validation_rids=validation_rids,
+        test_rids=test_rids,
+    )
+
+
 def compute_pair_metrics(
     pairs: list[dict[str, str]],
     baseline: np.ndarray,
     observed: np.ndarray,
     predicted: np.ndarray,
-    split: SubjectSplit,
+    split: SubjectSplit | SubjectTrainValidationTestSplit,
     model_name: str,
 ) -> list[dict[str, Any]]:
-    split_by_index = {int(index): "train" for index in split.train_indices}
-    split_by_index.update({int(index): "test" for index in split.test_indices})
+    split_by_index = split_labels_by_index(split)
 
     rows: list[dict[str, Any]] = []
     for index, pair in enumerate(pairs):
@@ -230,36 +296,44 @@ def compute_aggregate_metrics(pair_metrics: list[dict[str, Any]]) -> list[dict[s
         "top10_overlap",
     ]
     rows: list[dict[str, Any]] = []
-    for split in ["train", "test", "all"]:
-        split_rows = pair_metrics if split == "all" else [row for row in pair_metrics if row["split"] == split]
-        for metric in metric_names:
-            values = np.asarray([row[metric] for row in split_rows if row[metric] == row[metric]], dtype=float)
-            if values.size == 0:
-                continue
-            rows.append(
-                {
-                    "model": split_rows[0]["model"] if split_rows else "",
-                    "split": split,
-                    "metric": metric,
-                    "n": int(values.size),
-                    "mean": float(np.mean(values)),
-                    "median": float(np.median(values)),
-                    "std": float(np.std(values)),
-                    "q25": float(np.quantile(values, 0.25)),
-                    "q75": float(np.quantile(values, 0.75)),
-                }
-            )
+    models = []
+    for row in pair_metrics:
+        if row["model"] not in models:
+            models.append(row["model"])
+
+    for model in models:
+        model_rows = [row for row in pair_metrics if row["model"] == model]
+        present_splits = {row["split"] for row in model_rows}
+        ordered_splits = [split for split in ["train", "validation", "test"] if split in present_splits] + ["all"]
+        for split in ordered_splits:
+            split_rows = model_rows if split == "all" else [row for row in model_rows if row["split"] == split]
+            for metric in metric_names:
+                values = np.asarray([row[metric] for row in split_rows if row[metric] == row[metric]], dtype=float)
+                if values.size == 0:
+                    continue
+                rows.append(
+                    {
+                        "model": model,
+                        "split": split,
+                        "metric": metric,
+                        "n": int(values.size),
+                        "mean": float(np.mean(values)),
+                        "median": float(np.median(values)),
+                        "std": float(np.std(values)),
+                        "q25": float(np.quantile(values, 0.25)),
+                        "q75": float(np.quantile(values, 0.75)),
+                    }
+                )
     return rows
 
 
 def build_prediction_rows(
     dataset: ForecastDataset,
     predicted: np.ndarray,
-    split: SubjectSplit,
+    split: SubjectSplit | SubjectTrainValidationTestSplit,
     model_name: str,
 ) -> list[dict[str, Any]]:
-    split_by_index = {int(index): "train" for index in split.train_indices}
-    split_by_index.update({int(index): "test" for index in split.test_indices})
+    split_by_index = split_labels_by_index(split)
 
     rows: list[dict[str, Any]] = []
     for pair_index, pair in enumerate(dataset.pairs):
@@ -288,6 +362,14 @@ def build_prediction_rows(
                 }
             )
     return rows
+
+
+def split_labels_by_index(split: SubjectSplit | SubjectTrainValidationTestSplit) -> dict[int, str]:
+    split_by_index = {int(index): "train" for index in split.train_indices}
+    if hasattr(split, "validation_indices"):
+        split_by_index.update({int(index): "validation" for index in split.validation_indices})
+    split_by_index.update({int(index): "test" for index in split.test_indices})
+    return split_by_index
 
 
 def safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
