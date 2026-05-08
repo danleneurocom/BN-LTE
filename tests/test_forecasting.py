@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
+
 from spread_toolbox.forecasting import (
+    SubjectSplit,
     compute_aggregate_metrics,
+    compute_gaussian_likelihood_metrics,
     make_subject_train_validation_test_split,
     split_labels_by_index,
 )
@@ -51,6 +55,33 @@ class ForecastingSplitTests(unittest.TestCase):
         mae_rows = [row for row in aggregate if row["split"] == "validation" and row["metric"] == "mae"]
         self.assertEqual([row["model"] for row in mae_rows], ["a", "b"])
         self.assertEqual([row["median"] for row in mae_rows], [1.0, 3.0])
+
+    def test_gaussian_likelihood_metrics_use_train_sigma(self) -> None:
+        observed = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+        predicted = np.array([[1.0, 1.0], [2.0, 1.8], [2.5, 3.5]])
+        split = SubjectSplit(
+            train_indices=np.array([0, 1]),
+            test_indices=np.array([2]),
+            train_rids=["1", "2"],
+            test_rids=["3"],
+        )
+
+        rows = compute_gaussian_likelihood_metrics(
+            observed,
+            predicted,
+            split,
+            "toy",
+            n_parameters=2,
+            min_sigma=0.01,
+        )
+        rows_by_split = {row["split"]: row for row in rows}
+
+        self.assertEqual(rows_by_split["train"]["n_scalar_observations"], 4)
+        self.assertEqual(rows_by_split["test"]["n_scalar_observations"], 2)
+        self.assertEqual(rows_by_split["train"]["n_parameters"], 2)
+        self.assertGreater(rows_by_split["train"]["sigma_train"], 0.0)
+        self.assertEqual(rows_by_split["test"]["elpd"], rows_by_split["test"]["log_likelihood"])
+        self.assertTrue(np.isfinite(rows_by_split["train"]["bic"]))
 
 
 def metric_row(model: str, split: str, value: float) -> dict[str, float | str]:

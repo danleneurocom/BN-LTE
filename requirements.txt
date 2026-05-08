@@ -9,6 +9,8 @@ pandas>=1.5
 scipy>=1.10
 pyyaml>=6.0
 scikit-learn>=1.2
+pymc>=5.16
+arviz>=0.17
 
 # Reporting and notebook figures
 matplotlib>=3.7

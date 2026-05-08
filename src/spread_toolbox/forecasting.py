@@ -327,6 +327,83 @@ def compute_aggregate_metrics(pair_metrics: list[dict[str, Any]]) -> list[dict[s
     return rows
 
 
+def compute_gaussian_likelihood_metrics(
+    observed: np.ndarray,
+    predicted: np.ndarray,
+    split: SubjectSplit | SubjectTrainValidationTestSplit,
+    model_name: str,
+    *,
+    n_parameters: int,
+    min_sigma: float = 1.0e-6,
+) -> list[dict[str, Any]]:
+    """Compute BIC and an ELPD-style Gaussian log predictive density.
+
+    Sigma is estimated once from training residuals, then reused on test so the
+    held-out score is genuinely out of sample.
+    """
+
+    observed = np.asarray(observed, dtype=float)
+    predicted = np.asarray(predicted, dtype=float)
+    if observed.shape != predicted.shape:
+        raise ValueError("observed and predicted arrays must have the same shape.")
+    if observed.ndim != 2:
+        raise ValueError("observed and predicted arrays must be two-dimensional.")
+    if n_parameters < 1:
+        raise ValueError("n_parameters must be at least 1.")
+
+    train_residuals = finite_residuals(observed[split.train_indices], predicted[split.train_indices])
+    if train_residuals.size == 0:
+        raise ValueError("Cannot estimate likelihood sigma with zero finite training residuals.")
+    sigma_train = max(float(np.sqrt(np.mean(train_residuals**2))), float(min_sigma))
+
+    split_indices: list[tuple[str, np.ndarray]] = [("train", split.train_indices)]
+    if hasattr(split, "validation_indices"):
+        split_indices.append(("validation", split.validation_indices))
+    split_indices.append(("test", split.test_indices))
+    all_indices = np.concatenate([indices for _, indices in split_indices if indices.size > 0])
+    split_indices.append(("all", all_indices))
+
+    rows: list[dict[str, Any]] = []
+    for split_name, indices in split_indices:
+        residuals = finite_residuals(observed[indices], predicted[indices])
+        n_scalar = int(residuals.size)
+        if n_scalar == 0:
+            continue
+        sse = float(np.sum(residuals**2))
+        log_likelihood = gaussian_log_likelihood_from_sse(sse, n_scalar, sigma_train)
+        bic = float(n_parameters * math.log(n_scalar) - 2.0 * log_likelihood)
+        rows.append(
+            {
+                "model": model_name,
+                "split": split_name,
+                "n_pairs": int(indices.size),
+                "n_scalar_observations": n_scalar,
+                "n_parameters": int(n_parameters),
+                "sigma_train": sigma_train,
+                "sse": sse,
+                "log_likelihood": log_likelihood,
+                "elpd": log_likelihood,
+                "elpd_per_observation": float(log_likelihood / n_scalar),
+                "bic": bic,
+            }
+        )
+    return rows
+
+
+def finite_residuals(observed: np.ndarray, predicted: np.ndarray) -> np.ndarray:
+    residuals = np.asarray(observed, dtype=float) - np.asarray(predicted, dtype=float)
+    return residuals[np.isfinite(residuals)]
+
+
+def gaussian_log_likelihood_from_sse(sse: float, n_observations: int, sigma: float) -> float:
+    if n_observations < 1:
+        raise ValueError("n_observations must be at least 1.")
+    if sigma <= 0.0:
+        raise ValueError("sigma must be positive.")
+    variance = float(sigma) ** 2
+    return float(-0.5 * (n_observations * math.log(2.0 * math.pi * variance) + float(sse) / variance))
+
+
 def build_prediction_rows(
     dataset: ForecastDataset,
     predicted: np.ndarray,
