@@ -6,6 +6,7 @@ import numpy as np
 
 from spread_toolbox.models.fkpp import GraphFKPPModel, LocalFKPPModel, fit_local_fkpp_components, normalize_laplacian
 from spread_toolbox.models.local_fkpp_bayes import group_indices_by_rid, median_or, predict_by_subject
+from spread_toolbox.models.closure import apply_closure_delta, build_closure_feature_library
 
 
 class FKPPTests(unittest.TestCase):
@@ -102,6 +103,29 @@ class FKPPTests(unittest.TestCase):
         )
         np.testing.assert_allclose(predicted, baseline)
         self.assertAlmostEqual(median_or(3.0, [1.0, np.nan, 5.0]), 3.0)
+
+    def test_closure_feature_library_adds_biological_interactions(self) -> None:
+        library = build_closure_feature_library(
+            np.array([[1.2, 1.4], [1.3, 1.5]]),
+            u0=np.array([1.0, 1.0]),
+            cc=np.array([2.0, 2.0]),
+            pair_covariates={"apoe4_dose": np.array([0.0, 1.0])},
+            regional_covariates={"amyloid_suvr": np.zeros((2, 2))},
+        )
+        self.assertEqual(library.values.shape[:2], (2, 2))
+        self.assertEqual(library.values.shape[2], len(library.names))
+        self.assertIn("apoe4_dose*tau*(K_minus_tau)", library.names)
+        self.assertIn("amyloid_suvr*tau^2", library.names)
+
+    def test_apply_closure_delta_clips_to_local_components(self) -> None:
+        predicted = apply_closure_delta(
+            np.array([[1.1, 1.9]]),
+            np.array([2.0]),
+            np.array([[0.2, -1.0]]),
+            u0=np.array([1.0, 1.0]),
+            cc=np.array([2.0, 2.0]),
+        )
+        np.testing.assert_allclose(predicted, np.array([[1.5, 1.0]]))
 
 
 if __name__ == "__main__":

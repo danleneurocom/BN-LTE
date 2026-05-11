@@ -11,6 +11,7 @@ pyyaml>=6.0
 scikit-learn>=1.2
 pymc>=5.16
 arviz>=0.17
+pysr>=1.5,<2
 
 # Reporting and notebook figures
 matplotlib>=3.7

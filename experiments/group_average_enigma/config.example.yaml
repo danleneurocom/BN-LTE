@@ -34,6 +34,8 @@ adni_files:
   mri_structural:
     - "MR_Image_Analysis/UCSFFSX7_03May2026.csv"
     - "MR_Image_Analysis/UCSFFSX6_03May2026.csv"
+    - "MR_Image_Analysis/UCSFFSX51_11_08_19_03May2026.csv"
+    - "MR_Image_Analysis/UCSFFSL51_03_01_22_03May2026.csv"
 
 cohort:
   min_tau_timepoints: 2
@@ -75,9 +77,12 @@ modeling:
   models:
     - "ndm"
     - "esm"
+    - "full_sir"
     - "global_fkpp"
     - "local_fkpp"
   esm_steps_per_year: 12
+  sir_steps_per_year: 12
+  sir_optimizer_maxiter: 80
   fkpp_steps_per_year: 12
   fkpp_laplacian_normalization: "spectral"
   fkpp_optimizer_maxiter: 80
@@ -92,9 +97,80 @@ modeling:
   local_fkpp_bayes_prior_scale: 1.0
   local_fkpp_bayes_min_sigma: 0.001
   likelihood_min_sigma: 0.000001
+  closure_fkpp_steps_per_year: 12
+  closure_fkpp_laplacian_normalization: "spectral"
+  closure_fkpp_optimizer_maxiter: 80
+  closure_component_quantile: 0.99
+  closure_covariate_max_days: 1095
+  closure_draws: 200
+  closure_tune: 300
+  closure_chains: 2
+  closure_target_accept: 0.95
+  closure_inclusion_threshold: 0.0001
+  closure_max_train_rows: 10000
+  closure_variant_backbones: ["global_fkpp", "esm"]
+  closure_esm_steps_per_year: 12
+  closure_ahba_eigenmaps_file: ""
+  ude_fkpp_steps_per_year: 12
+  ude_fkpp_laplacian_normalization: "spectral"
+  ude_fkpp_optimizer_maxiter: 80
+  ude_component_quantile: 0.99
+  ude_hidden_layers: [8]
+  ude_activation: "tanh"
+  ude_rate_scale: 0.05
+  ude_l2_weight: 0.0001
+  ude_spsa_iterations: 120
+  ude_spsa_learning_rate: 0.04
+  ude_spsa_perturbation: 0.08
+  ude_spsa_gradient_clip: 1.0
+  ude_objective_max_pairs: 256
+  ude_distill_rows: 5000
+  ude_pysr_niterations: 80
+  ude_pysr_populations: 12
+  ude_pysr_population_size: 24
+  ude_pysr_maxsize: 24
+  ude_pysr_parsimony: 0.0032
+  ude_pysr_timeout_seconds: 180
+  ude_pysr_batching: true
+  ude_pysr_batch_size: 512
+  ude_pysr_ncycles_per_iteration: 100
+  ude_pysr_binary_operators: ["+", "-", "*", "/"]
+  ude_pysr_unary_operators: ["square", "exp"]
+  pinn_reaction_steps_per_year: 12
+  pinn_reaction_laplacian_normalization: "spectral"
+  pinn_reaction_optimizer_maxiter: 80
+  pinn_reaction_component_quantile: 0.99
+  pinn_reaction_hidden_layers: [8]
+  pinn_reaction_activation: "tanh"
+  pinn_reaction_ensemble_size: 3
+  pinn_reaction_spsa_iterations: 120
+  pinn_reaction_spsa_learning_rate: 0.04
+  pinn_reaction_spsa_perturbation: 0.08
+  pinn_reaction_spsa_gradient_clip: 1.0
+  pinn_reaction_l2_weight: 0.0001
+  pinn_reaction_aux_weight: 0.001
+  pinn_reaction_objective_max_pairs: 256
+  pinn_reaction_distill_grid: 512
+  pinn_reaction_pysr_niterations: 80
+  pinn_reaction_pysr_populations: 12
+  pinn_reaction_pysr_population_size: 24
+  pinn_reaction_pysr_maxsize: 24
+  pinn_reaction_pysr_parsimony: 0.0032
+  pinn_reaction_pysr_timeout_seconds: 180
+  pinn_reaction_pysr_binary_operators: ["+", "-", "*", "/"]
+  pinn_reaction_pysr_unary_operators: ["square", "exp"]
+  individualized_residual_fkpp_steps_per_year: 12
+  individualized_residual_laplacian_normalization: "spectral"
+  individualized_residual_fkpp_optimizer_maxiter: 80
+  individualized_residual_region_bias: true
+  individualized_residual_ridge_alphas: [0.01, 0.1, 1, 10, 100, 1000]
+  individualized_residual_cv_folds: 5
+  individualized_residual_max_train_rows: 60000
+  individualized_residual_shrinkage_candidates: [0, 0.25, 0.5, 0.75, 1.0]
   parameter_bounds:
     rho: [0.0, 10.0]
     beta: [0.0, 10.0]
+    gamma: [0.0, 10.0]
     alpha: [0.0, 10.0]
 
 evaluation:
@@ -145,3 +221,40 @@ outputs:
   local_fkpp_pair_metrics: "local_fkpp_pair_metrics.csv"
   local_fkpp_metrics_summary: "local_fkpp_metrics_summary.csv"
   local_fkpp_report: "local_fkpp_report.json"
+  closure_pair_metrics: "closure_pair_metrics.csv"
+  closure_metrics_summary: "closure_metrics_summary.csv"
+  closure_likelihood_metrics: "closure_likelihood_metrics.csv"
+  closure_terms: "closure_terms.csv"
+  closure_report: "closure_report.json"
+  global_fkpp_closure_pair_metrics: "global_fkpp_closure_pair_metrics.csv"
+  global_fkpp_closure_metrics_summary: "global_fkpp_closure_metrics_summary.csv"
+  global_fkpp_closure_likelihood_metrics: "global_fkpp_closure_likelihood_metrics.csv"
+  global_fkpp_closure_terms: "global_fkpp_closure_terms.csv"
+  global_fkpp_closure_report: "global_fkpp_closure_report.json"
+  esm_closure_pair_metrics: "esm_closure_pair_metrics.csv"
+  esm_closure_metrics_summary: "esm_closure_metrics_summary.csv"
+  esm_closure_likelihood_metrics: "esm_closure_likelihood_metrics.csv"
+  esm_closure_terms: "esm_closure_terms.csv"
+  esm_closure_report: "esm_closure_report.json"
+  ude_pair_metrics: "ude_pair_metrics.csv"
+  ude_metrics_summary: "ude_metrics_summary.csv"
+  ude_likelihood_metrics: "ude_likelihood_metrics.csv"
+  ude_terms: "ude_terms.csv"
+  ude_pareto_front: "ude_pareto_front.csv"
+  ude_report: "ude_report.json"
+  pinn_reaction_pair_metrics: "pinn_reaction_pair_metrics.csv"
+  pinn_reaction_metrics_summary: "pinn_reaction_metrics_summary.csv"
+  pinn_reaction_likelihood_metrics: "pinn_reaction_likelihood_metrics.csv"
+  pinn_reaction_pareto_front: "pinn_reaction_pareto_front.csv"
+  pinn_reaction_report: "pinn_reaction_report.json"
+  individualized_residual_pair_metrics: "individualized_residual_pair_metrics.csv"
+  individualized_residual_metrics_summary: "individualized_residual_metrics_summary.csv"
+  individualized_residual_likelihood_metrics: "individualized_residual_likelihood_metrics.csv"
+  individualized_residual_terms: "individualized_residual_terms.csv"
+  individualized_residual_report: "individualized_residual_report.json"
+  model_comparison_metrics_summary: "model_comparison_metrics_summary.csv"
+  model_comparison_test_metrics_wide: "model_comparison_test_metrics_wide.csv"
+  model_comparison_likelihood: "model_comparison_likelihood.csv"
+  model_comparison_likelihood_wide: "model_comparison_likelihood_wide.csv"
+  model_comparison_report: "model_comparison_report.json"
+  model_comparison_report_markdown: "model_comparison_report.md"

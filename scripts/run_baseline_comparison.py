@@ -40,6 +40,7 @@ from spread_toolbox.models.local_fkpp_bayes import (  # noqa: E402
     summarize_subject_posteriors,
 )
 from spread_toolbox.models.ndm import NetworkDiffusionModel  # noqa: E402
+from spread_toolbox.models.sir import GraphSIRModel  # noqa: E402
 
 
 def default_config_path() -> Path:
@@ -82,6 +83,7 @@ def main() -> int:
     model_results = [
         run_ndm(dataset, split, laplacian, modeling),
         run_esm(dataset, split, adjacency, modeling),
+        run_sir(dataset, split, adjacency, modeling),
         run_fkpp(dataset, split, laplacian, modeling),
         run_local_fkpp(dataset, split, laplacian, modeling, config),
     ]
@@ -229,6 +231,57 @@ def run_esm(
             "train_mse_scaled": fit.train_mse,
             "optimizer_success": fit.optimizer_success,
             "optimizer_message": fit.optimizer_message,
+        },
+    }
+
+
+def run_sir(
+    dataset: ForecastDataset,
+    split: SubjectSplit,
+    adjacency: np.ndarray,
+    modeling: dict[str, Any],
+) -> dict[str, Any]:
+    scaler = MinMaxStateScaler.fit(
+        dataset.baseline[split.train_indices],
+        dataset.observed[split.train_indices],
+    )
+    baseline_scaled = scaler.transform(dataset.baseline)
+    observed_scaled = scaler.transform(dataset.observed)
+    parameter_bounds = modeling.get("parameter_bounds", {})
+    beta_bounds = tuple(float(value) for value in parameter_bounds.get("beta", [0.0, 10.0]))
+    gamma_bounds = tuple(float(value) for value in parameter_bounds.get("gamma", [0.0, 10.0]))
+    model = GraphSIRModel(adjacency, steps_per_year=int(modeling.get("sir_steps_per_year", 12)))
+    fit = model.fit_global_parameters(
+        baseline_scaled[split.train_indices],
+        observed_scaled[split.train_indices],
+        dataset.time_years[split.train_indices],
+        beta_bounds=(beta_bounds[0], beta_bounds[1]),
+        gamma_bounds=(gamma_bounds[0], gamma_bounds[1]),
+        maxiter=int(modeling.get("sir_optimizer_maxiter", 80)),
+    )
+    predicted = scaler.inverse_transform(model.predict(baseline_scaled, dataset.time_years, beta=fit.beta, gamma=fit.gamma))
+    pair_metrics = compute_pair_metrics(dataset.pairs, dataset.baseline, dataset.observed, predicted, split, "full_sir")
+    return {
+        "model": "full_sir",
+        "predicted": predicted,
+        "pair_metrics": pair_metrics,
+        "fit_report": {
+            "model": "full_sir",
+            "equation": (
+                "dS_i/dt=-beta*S_i*(W I)_i; dI_i/dt=beta*S_i*(W I)_i-gamma*I_i; "
+                "dR_i/dt=gamma*I_i; observed tau=I"
+            ),
+            "initial_condition": "I0 = min-max-scaled baseline tau, S0 = 1 - I0, R0 = 0",
+            "n_likelihood_parameters": 3,
+            "beta": fit.beta,
+            "gamma": fit.gamma,
+            "beta_bounds": list(beta_bounds),
+            "gamma_bounds": list(gamma_bounds),
+            "train_mse_scaled": fit.train_mse,
+            "optimizer_success": fit.optimizer_success,
+            "optimizer_message": fit.optimizer_message,
+            "optimizer_iterations": fit.optimizer_iterations,
+            "optimizer_evaluations": fit.optimizer_evaluations,
         },
     }
 
@@ -460,7 +513,7 @@ def print_comparison_table(rows: list[dict[str, Any]]) -> None:
         f"{header[0]:<14} {header[1]:>9} {header[2]:>9} {header[3]:>21} "
         f"{header[4]:>19} {header[5]:>9} {header[6]:>10}"
     )
-    for model in ["ndm", "esm", "global_fkpp", "local_fkpp"]:
+    for model in ["ndm", "esm", "full_sir", "global_fkpp", "local_fkpp"]:
         metrics = by_model.get(model, {})
         print(
             f"{model:<14} "
@@ -478,7 +531,7 @@ def print_likelihood_table(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         by_model_split.setdefault(str(row["model"]), {})[str(row["split"])] = row
     print(f"{'model':<14} {'train BIC':>12} {'test ELPD':>12} {'test ELPD/obs':>15} {'sigma':>9} {'k':>5}")
-    for model in ["ndm", "esm", "global_fkpp", "local_fkpp"]:
+    for model in ["ndm", "esm", "full_sir", "global_fkpp", "local_fkpp"]:
         train = by_model_split.get(model, {}).get("train", {})
         test = by_model_split.get(model, {}).get("test", {})
         print(

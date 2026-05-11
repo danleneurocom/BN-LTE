@@ -22,3 +22,4 @@ dependencies:
   - pytest>=8.0
   - pip:
       - git+https://github.com/MICA-MNI/ENIGMA.git@v2.0.3
+      - pysr>=1.5,<2
