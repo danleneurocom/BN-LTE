@@ -1,16 +1,11 @@
-# Copy this file to config.yaml and edit paths for your machine.
-# config.yaml is ignored by git so local data paths stay private.
-
 experiment:
-  name: group_average_enigma
-  description: ADNI longitudinal tau forecasting with ENIGMA group-average connectivity
+  name: group_average_hcp
+  description: ADNI longitudinal tau forecasting with HCP-1200 group-average connectivity (1000 subjects, probabilistic, Glasser→aparc)
   random_seed: 20260507
 
 paths:
-  # Use your local ADNI Study Files directory. This example assumes the dataset
-  # folder sits inside the repo root and is ignored by git.
   adni_dir: "BRAIN DATA/ADNI"
-  output_dir: "experiments/group_average_enigma/output"
+  output_dir: "experiments/group_average_enigma/output_hcp"
   cache_dir: "experiments/group_average_enigma/cache"
   enigma_cache_dir: "experiments/group_average_enigma/cache/enigma"
 
@@ -167,40 +162,32 @@ modeling:
   individualized_residual_cv_folds: 5
   individualized_residual_max_train_rows: 60000
   individualized_residual_shrinkage_candidates: [0, 0.25, 0.5, 0.75, 1.0]
-  # AM-FKPP: Amyloid- and Atrophy-Modulated FKPP
-  # dS_i/dt = -rho (L S)_i + alpha S_i(1-S_i) G_i
-  # G_i = max(modulator_min, 1 + beta_amyloid * amyloid_i + beta_thickness * thickness_i + ...)
-  linear_regression_ridge_alphas: [0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
-  linear_regression_cv_folds: 5
-  linear_regression_max_train_rows: 120000
-  as_fkpp_steps_per_year: 12
-  as_fkpp_laplacian_normalization: "spectral"
-  as_fkpp_n_eigenmodes: 10
-  as_fkpp_per_pair_delta_scale: 5.0
-  as_fkpp_per_pair_maxiter: 40
-  as_fkpp_backbone_maxiter: 80
-  as_fkpp_ridge_cv_alphas: [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
-  bio_fkpp_steps_per_year: 12
-  bio_fkpp_laplacian_normalization: "spectral"
-  bio_fkpp_optimizer_maxiter: 120
-  bio_fkpp_beta_bounds: [-5.0, 5.0]
-  bio_fkpp_gamma_bounds: [-5.0, 5.0]
-  bio_fkpp_delta_rho_bounds: [-2.0, 2.0]
-  bio_fkpp_lambda_c_bounds: [-5.0, 5.0]
   ndm_individualized_residual_ridge_alphas: [0.1, 1, 10, 100, 1000]
   ndm_individualized_residual_cv_folds: 5
   ndm_individualized_residual_max_train_rows: 60000
   ndm_individualized_residual_shrinkage_candidates: [0, 0.25, 0.5, 0.75, 1.0]
   ndm_individualized_residual_region_bias: true
-  am_fkpp_steps_per_year: 12
-  am_fkpp_laplacian_normalization: "spectral"
-  am_fkpp_optimizer_maxiter: 120
-  am_fkpp_modulator_min: 0.01
-  am_fkpp_covariates:
-    - name: "amyloid_suvr"
-      bounds: [-5.0, 5.0]
-    - name: "cortical_thickness"
-      bounds: [-5.0, 5.0]
+  symbolic_ode_steps_per_year: 12
+  symbolic_ode_laplacian_normalization: "spectral"
+  symbolic_ode_fkpp_maxiter: 80
+  symbolic_ode_pysr_niterations: 200
+  symbolic_ode_pysr_populations: 15
+  symbolic_ode_pysr_population_size: 33
+  symbolic_ode_pysr_maxsize: 20
+  symbolic_ode_pysr_parsimony: 0.003
+  symbolic_ode_pysr_timeout_seconds: 300
+  symbolic_ode_pysr_batching: true
+  symbolic_ode_pysr_batch_size: 2048
+  symbolic_ode_pysr_binary_operators: ["+", "-", "*", "/"]
+  symbolic_ode_pysr_unary_operators: ["square", "exp"]
+  symbolic_ode_max_train_rows: 40000
+  research_fkpp_steps_per_year: 12
+  research_fkpp_laplacian_normalization: "spectral"
+  research_fkpp_optimizer_maxiter: 80
+  research_vulnerability_ridge_weight: 1.0
+  research_vulnerability_lower: 0.25
+  research_vulnerability_upper: 4.0
+  research_vulnerability_iterations: 2
   parameter_bounds:
     rho: [0.0, 10.0]
     beta: [0.0, 10.0]
@@ -286,35 +273,23 @@ outputs:
   individualized_residual_likelihood_metrics: "individualized_residual_likelihood_metrics.csv"
   individualized_residual_terms: "individualized_residual_terms.csv"
   individualized_residual_report: "individualized_residual_report.json"
+  ndm_individualized_residual_pair_metrics: "ndm_individualized_residual_pair_metrics.csv"
+  ndm_individualized_residual_metrics_summary: "ndm_individualized_residual_metrics_summary.csv"
+  ndm_individualized_residual_likelihood_metrics: "ndm_individualized_residual_likelihood_metrics.csv"
+  ndm_individualized_residual_terms: "ndm_individualized_residual_terms.csv"
+  ndm_individualized_residual_report: "ndm_individualized_residual_report.json"
   model_comparison_metrics_summary: "model_comparison_metrics_summary.csv"
   model_comparison_test_metrics_wide: "model_comparison_test_metrics_wide.csv"
   model_comparison_likelihood: "model_comparison_likelihood.csv"
   model_comparison_likelihood_wide: "model_comparison_likelihood_wide.csv"
   model_comparison_report: "model_comparison_report.json"
   model_comparison_report_markdown: "model_comparison_report.md"
-  am_fkpp_pair_metrics: "am_fkpp_pair_metrics.csv"
-  am_fkpp_metrics_summary: "am_fkpp_metrics_summary.csv"
-  am_fkpp_likelihood_metrics: "am_fkpp_likelihood_metrics.csv"
-  am_fkpp_report: "am_fkpp_report.json"
-  hcp_adjacency_matrix: "hcp_aparc_adjacency.csv"
-  hcp_laplacian_matrix: "hcp_aparc_laplacian.csv"
-  hcp_connectome_report: "hcp_connectome_report.json"
-  linear_regression_pair_metrics: "linear_regression_pair_metrics.csv"
-  linear_regression_metrics_summary: "linear_regression_metrics_summary.csv"
-  linear_regression_likelihood_metrics: "linear_regression_likelihood_metrics.csv"
-  linear_regression_terms: "linear_regression_terms.csv"
-  linear_regression_report: "linear_regression_report.json"
-  as_fkpp_pair_metrics: "as_fkpp_pair_metrics.csv"
-  as_fkpp_metrics_summary: "as_fkpp_metrics_summary.csv"
-  as_fkpp_likelihood_metrics: "as_fkpp_likelihood_metrics.csv"
-  as_fkpp_terms: "as_fkpp_terms.csv"
-  as_fkpp_report: "as_fkpp_report.json"
-  bio_fkpp_pair_metrics: "bio_fkpp_pair_metrics.csv"
-  bio_fkpp_metrics_summary: "bio_fkpp_metrics_summary.csv"
-  bio_fkpp_likelihood_metrics: "bio_fkpp_likelihood_metrics.csv"
-  bio_fkpp_report: "bio_fkpp_report.json"
-  ndm_individualized_residual_pair_metrics: "ndm_individualized_residual_pair_metrics.csv"
-  ndm_individualized_residual_metrics_summary: "ndm_individualized_residual_metrics_summary.csv"
-  ndm_individualized_residual_likelihood_metrics: "ndm_individualized_residual_likelihood_metrics.csv"
-  ndm_individualized_residual_terms: "ndm_individualized_residual_terms.csv"
-  ndm_individualized_residual_report: "ndm_individualized_residual_report.json"
+  research_model_pair_metrics: "research_model_pair_metrics.csv"
+  research_model_metrics_summary: "research_model_metrics_summary.csv"
+  research_model_likelihood_metrics: "research_model_likelihood_metrics.csv"
+  research_model_vulnerability: "research_model_vulnerability.csv"
+  research_model_report: "research_model_report.json"
+  symbolic_ode_pair_metrics: "symbolic_ode_pair_metrics.csv"
+  symbolic_ode_metrics_summary: "symbolic_ode_metrics_summary.csv"
+  symbolic_ode_likelihood_metrics: "symbolic_ode_likelihood_metrics.csv"
+  symbolic_ode_report: "symbolic_ode_report.json"
