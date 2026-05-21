@@ -1,0 +1,544 @@
+\section{Methodology: Bayesian Networks with Latent Time Embedding}
+\label{sec:bn_lte_methodology}
+
+\subsection{Scope of This Section}
+
+This section describes the implemented ADNI-first Bayesian Network with Latent
+Time Embedding (BN-LTE) pipeline in \texttt{BayesianNetwork-SCM}. The method
+covers longitudinal target construction, train-only latent disease-time
+estimation, expert-constrained dynamic Bayesian-network structure,
+spline-varying structural effects, penalized estimation, held-out forecasting,
+dynamic edge summaries, and comparison against mechanistic baselines such as
+NDM, ESM, and SIR.
+
+The present implementation should be interpreted as a stage-aware causal
+forecasting model rather than a fully identifiable interventional causal
+discovery system. Causal direction is supported by longitudinal ordering:
+candidate causes are measured at baseline, while targets are future rates of
+change. Biological constraints further prohibit nonphysical orientations, such
+as brain atrophy causing sex or APOE genotype. Future extensions can add full
+posterior MCMC over graph structures, bootstrap posterior inclusion
+probabilities, external transcriptomic gating, and independent cohort
+replication, but these are not required to understand the core BN-LTE model
+reported here.
+
+\subsection{Preliminaries and Notation}
+
+The empirical unit is a longitudinal subject-pair. Let $i=1,\ldots,N$ index
+eligible baseline-to-follow-up pairs, and let $u(i)$ denote the corresponding
+participant. Each pair has a baseline visit time $t_{i0}$, a follow-up visit
+time $t_{i1}$, and elapsed time
+\begin{equation}
+\Delta_i
+=
+\frac{t_{i1}-t_{i0}}{365.25}
+>0
+\end{equation}
+in years. Let $X_i(t_{i0}) \in \mathbb{R}^p$ be the baseline multimodal
+feature vector, let $Y_i(t_{i0}) \in \mathbb{R}^q$ be the baseline value of the
+target biomarkers or regions, and let $Y_i(t_{i1}) \in \mathbb{R}^q$ be the
+corresponding follow-up value. The annualized rate target for region or
+biomarker $j$ is
+\begin{equation}
+R_{ij}
+=
+\frac{Y_{ij}(t_{i1}) - Y_{ij}(t_{i0})}{\Delta_i},
+\qquad
+R_i =
+\left[
+R_{i1}, \ldots, R_{iq}
+\right]^T .
+\end{equation}
+
+The key latent variable is $Z_i \in [0,1]$, an estimated disease-stage
+coordinate computed from baseline features only. Low values correspond to
+earlier biological disease stage and high values correspond to more advanced
+stage. The variable $Z_i$ is not a hidden calendar time and is not fitted using
+the held-out follow-up targets; it is a train-derived, explainable ordering of
+baseline disease burden.
+
+For each target $j$, BN-LTE learns a stage-indexed directed graph
+$G(z)=(V,E(z))$, where the node set $V$ contains baseline variables and future
+rate targets, and $E(z)$ contains directed baseline-to-rate dependencies that
+may vary with disease stage. The admissible parent set of target $j$ at stage
+$z$ is
+\begin{equation}
+\operatorname{pa}_z(j)
+=
+\left\{
+l : X_l(t_0) \rightarrow R_j
+\text{ is active at stage } z
+\right\}.
+\end{equation}
+
+\begin{center}
+\begin{tabular}{p{0.22\linewidth}p{0.70\linewidth}}
+Symbol & Meaning \\
+\hline
+$X_{il}(t_{i0})$ & Baseline value of predictor $l$ for pair $i$. \\
+$Y_{ij}(t_{i0})$ & Baseline burden of target $j$. \\
+$Y_{ij}(t_{i1})$ & Follow-up burden of target $j$. \\
+$R_{ij}$ & Annualized future rate of target $j$. \\
+$Z_i$ & Train-derived latent disease stage in $[0,1]$. \\
+$G(z)$ & Disease-stage-specific directed graph. \\
+$\operatorname{pa}_z(j)$ & Parents allowed to directly affect target-rate $R_j$ at stage $z$. \\
+$a_j(z)$ & Stage-specific intercept or population drift term. \\
+$c_j(z)$ & Stage-specific self-history effect of baseline $Y_j(t_{i0})$ on its future rate. \\
+$b_{jl}(z)$ & Stage-specific direct effect of baseline predictor $X_l(t_{i0})$ on future rate $R_j$. \\
+$B_k(z)$ & Cubic spline basis function evaluated at disease stage $z$. \\
+$K$ & Second-difference roughness penalty matrix for spline coefficients. \\
+$\Phi_j$ & Regression design matrix for target $j$. \\
+\end{tabular}
+\end{center}
+
+This notation separates three temporal roles. Baseline covariates $X(t_{i0})$
+are candidate causes, baseline targets $Y(t_{i0})$ provide autoregressive
+disease state, and future rates $R$ are the effects to be predicted and
+explained. This separation is central: BN-LTE does not infer causality from
+simultaneous correlation alone.
+
+\subsection{Algorithm 1: BN-LTE Training and Evaluation Pipeline}
+
+\paragraph{Input.}
+Raw ADNI tables, participant identifiers, visit dates, baseline multimodal
+variables, regional target variables, biological graph constraints, spline
+specification, candidate regularization strengths, and train/validation/test
+seed.
+
+\paragraph{Output.}
+Fitted BN-LTE model, held-out follow-up predictions, dynamic edge curves,
+performance metrics, and visualization artifacts.
+
+\begin{enumerate}
+\item Construct longitudinal target pairs. For each participant, order valid
+visits by acquisition date, select baseline-follow-up pairs with positive
+elapsed time, compute $\Delta_i$ in years, and compute
+$R_{ij}=(Y_{ij}(t_{i1})-Y_{ij}(t_{i0}))/\Delta_i$.
+
+\item Build the baseline design matrix. Assemble $X_i(t_{i0})$ from
+demographics, APOE, fluid biomarkers, amyloid-PET, tau-PET, MRI-derived
+neurodegeneration measures, and cognitive scores. Store baseline targets
+$Y_i(t_{i0})$, follow-up targets $Y_i(t_{i1})$, and rates $R_i$. Remove
+variables with insufficient training coverage or near-zero training variance.
+
+\item Split by participant. Partition unique participants into training,
+validation, and test sets so that no participant contributes pairs to more
+than one split.
+
+\item Estimate latent disease time $Z$. Select pseudotime features $M_i$ from
+baseline variables only. In tau-free mode, exclude tau-PET and p-tau217
+variables from $M_i$. Impute and standardize $M_i$ using training statistics,
+fit a one-dimensional training SVD embedding, orient the embedding by an
+interpretable disease-burden proxy, and map projected scores to $Z_i \in [0,1]$
+using training percentiles.
+
+\item Define admissible graph structure. Assign variables to biological layers:
+exogenous roots, molecular pathology, imaging pathology, neurodegeneration,
+and clinical outcomes. Prohibit incoming edges into root variables, prohibit
+outgoing edges from clinical outcome variables, prohibit edges that violate the
+baseline-to-future temporal order, and for each target $j$ rank admissible
+parents by coverage, biological priority, and training association.
+
+\item Fit stage-varying structural equations. For each target $j$, evaluate
+the spline basis $B(Z_i)$ on training rows; construct $\Phi_j$ from stage
+intercept terms $B_k(Z_i)$, baseline self-history terms
+$Y_{ij}(t_{i0})B_k(Z_i)$, and admissible parent terms
+$X_{il}(t_{i0})B_k(Z_i)$; fit penalized MAP/ridge coefficients on training
+rows; select regularization by validation performance; and recover
+$a_j(z)$, $c_j(z)$, and $b_{jl}(z)$ on a dense $Z$ grid.
+
+\item Predict held-out progression. For each validation or test pair, compute
+$Z_i$ using the fitted training embedding, predict future rates
+$\widehat{R}_{ij}$ from the fitted structural equation, and convert rates to
+follow-up burden:
+\begin{equation}
+\widehat{Y}_{ij}(t_{i1})
+=
+Y_{ij}(t_{i0}) + \Delta_i \widehat{R}_{ij}.
+\end{equation}
+
+\item Evaluate and summarize. Compute rate and follow-up-burden MAE/RMSE,
+compute spatial rank agreement between empirical and predicted regional burden
+maps, compare BN-LTE against NDM, ESM, SIR, persistence, and related models,
+and export dynamic edge curves, causal-order summaries, and brain-region
+visualizations comparing baseline, empirical follow-up, and model predictions.
+\end{enumerate}
+
+\subsection{Overview}
+
+We model Alzheimer's disease progression as a non-stationary causal process in
+which the dependency structure between biomarkers changes with disease stage.
+Let subject-pair $i$ contain a baseline visit at time $t_{i0}$ and a follow-up
+visit at time $t_{i1}$, with elapsed time $\Delta_i>0$ measured in years. For
+each regional tau-PET target $j$, we observe baseline burden
+$Y_{ij}(t_{i0})$ and follow-up burden $Y_{ij}(t_{i1})$. The learning target is
+the annualized longitudinal rate
+\begin{equation}
+R_{ij}
+=
+\frac{Y_{ij}(t_{i1}) - Y_{ij}(t_{i0})}{\Delta_i}.
+\label{eq:bnlte_rate}
+\end{equation}
+
+The proposed Bayesian Network with Latent Time Embedding (BN-LTE) therefore
+does not attempt to orient a same-visit cross-sectional graph. Instead, every
+candidate cause is measured at baseline and every outcome is a future rate of
+change. This baseline-to-rate formulation gives the graph an explicit temporal
+direction and avoids leakage from follow-up biomarkers into the predictor set.
+
+For each subject-pair, BN-LTE estimates an explainable latent disease time
+$Z_i \in [0,1]$ from baseline multimodal measurements. Conditional on $Z_i$,
+the model defines a directed Bayesian-network structural causal model over
+future rates. The key assumption is that the parent set and causal effect size
+of a biomarker can be stage dependent: an edge that is weak early in disease can
+strengthen later, and an early edge can decouple after a downstream pathology
+becomes self-sustaining.
+
+\subsection{Data Representation}
+
+Each pair is represented by a baseline feature vector
+\begin{equation}
+X_i(t_{i0})
+=
+\left[
+X_{i1}(t_{i0}), \ldots, X_{ip}(t_{i0})
+\right]^T,
+\end{equation}
+containing demographic, genetic, fluid, amyloid-PET, tau-PET, MRI, and
+cognitive variables. In the current ADNI implementation, root variables include
+age, sex, education, and APOE $\varepsilon 4$ dosage; fluid variables include
+plasma p-tau217, A$\beta$42/40, NfL, and GFAP; pathology variables include
+amyloid-PET burden and regional tau-PET SUVR; neurodegeneration variables
+include FreeSurfer-derived hippocampal, amygdala, and temporal cortical
+measures; and clinical variables include ADAS-Cog-13, MMSE, RAVLT immediate
+recall, and CDR-SB.
+
+For tau forecasting, the response vector consists of annualized rates in a
+selected temporo-parietal target set,
+\begin{equation}
+R_i =
+\left[
+R_{i1}, \ldots, R_{iq}
+\right]^T,
+\end{equation}
+where each $R_{ij}$ is computed from the subject-specific follow-up interval
+$\Delta_i$. In the model-comparison experiment, the target regions are
+bilateral entorhinal, fusiform, inferior temporal, middle temporal, and inferior
+parietal cortex. Subject-level train, validation, and test splits are made by
+unique participant identifier so that no subject contributes pairs to more than
+one split.
+
+\subsection{Latent Time Embedding}
+
+The latent time variable $Z_i$ is intended to represent biological disease
+stage rather than chronological age. It is learned using training rows only and
+is then applied unchanged to validation and test rows. This avoids using
+held-out outcomes to define the disease axis.
+
+Let $M_i \subset X_i(t_{i0})$ be the subset of baseline features permitted for
+pseudotime estimation. In the default tau-free mode, all tau and p-tau217
+features are excluded from $M_i$, so the latent disease coordinate used to
+predict tau rates is not directly constructed from the tau targets themselves.
+Features with insufficient training coverage or near-zero training variance are
+excluded. Missing values are imputed with training medians, and retained
+features are standardized using training means and standard deviations:
+\begin{equation}
+\widetilde{M}_{im}
+=
+\frac{M_{im}-\mu_m}{s_m}.
+\end{equation}
+
+BN-LTE then fits a one-dimensional linear embedding by taking the leading right
+singular vector of the standardized training matrix:
+\begin{equation}
+\widetilde{M}_{\mathrm{train}}
+=
+U \Sigma V^T,
+\qquad
+w = V_{\cdot 1}.
+\end{equation}
+The raw latent-time score is the projection
+\begin{equation}
+s_i
+=
+\widetilde{M}_i^T w .
+\end{equation}
+
+Because singular vectors are sign ambiguous, the direction of $w$ is oriented
+so that $s_i$ is positively correlated with a disease-burden proxy. The burden
+proxy assigns positive sign to variables expected to increase with disease
+burden, such as amyloid, NfL, GFAP, ADAS-Cog-13, and CDR-SB, and negative sign
+to variables expected to decrease with disease burden, such as MMSE, RAVLT,
+MRI volume, cortical thickness, and A$\beta$42/40. Scores are mapped to the
+unit interval using the first and ninety-ninth training percentiles:
+\begin{equation}
+Z_i
+=
+\operatorname{clip}
+\left(
+\frac{s_i - Q_{0.01}(s_{\mathrm{train}})}
+     {Q_{0.99}(s_{\mathrm{train}})-Q_{0.01}(s_{\mathrm{train}})},
+0, 1
+\right).
+\label{eq:bnlte_z}
+\end{equation}
+This construction makes $Z_i$ explainable: each subject's position can be
+decomposed into feature-level contributions $\widetilde{M}_{im}w_m$, and
+population-level loadings identify which biomarkers define the disease axis.
+
+\subsection{Dynamic Bayesian-Network Factorization}
+
+For a fixed latent disease stage $z$, BN-LTE defines a directed acyclic
+Bayesian network over future rates:
+\begin{equation}
+p(R_i \mid X_i(t_{i0}), Y_i(t_{i0}), Z_i=z, G_z)
+=
+\prod_{j=1}^{q}
+p
+\left(
+R_{ij}
+\mid
+Y_{ij}(t_{i0}),
+X_{i,\operatorname{pa}_z(j)}(t_{i0}),
+Z_i=z
+\right).
+\label{eq:bnlte_factorization}
+\end{equation}
+Here $\operatorname{pa}_z(j)$ is the set of admissible baseline parents for
+target $j$ at latent time $z$. In the current implementation, a target has a
+fixed candidate parent set selected before estimation, while the corresponding
+effect functions can become effectively active or inactive across $z$. Thus,
+graph non-stationarity is represented by smooth stage-varying effect curves
+rather than by independently estimating a separate graph at every time point.
+
+The conditional distribution for each target is a Gaussian structural equation:
+\begin{equation}
+R_{ij}
+=
+a_j(Z_i)
++ c_j(Z_i)Y_{ij}(t_{i0})
++ \sum_{\ell \in \operatorname{pa}(j)}
+b_{j\ell}(Z_i)X_{i\ell}(t_{i0})
++ \epsilon_{ij},
+\qquad
+\epsilon_{ij}\sim\mathcal{N}(0,\sigma_j^2).
+\label{eq:bnlte_scm}
+\end{equation}
+The term $a_j(Z_i)$ is the stage-specific baseline rate for target $j$;
+$c_j(Z_i)Y_{ij}(t_{i0})$ is a self-history term that captures autonomous
+progression from existing local burden; and $b_{j\ell}(Z_i)$ is the direct
+stage-dependent effect of baseline parent $\ell$ on the future rate of target
+$j$. The coefficient curve $b_{j\ell}(z)$ is interpreted as a conditional
+baseline-to-future-rate effect, not as a randomized interventional effect.
+
+After estimating the rate, follow-up burden is predicted by the explicit Euler
+update
+\begin{equation}
+\widehat{Y}_{ij}(t_{i1})
+=
+Y_{ij}(t_{i0}) + \Delta_i \widehat{R}_{ij}.
+\label{eq:bnlte_euler}
+\end{equation}
+
+\subsection{Spline Parameterization of Non-Stationary Effects}
+
+To permit smooth changes in effect magnitude across latent disease time, BN-LTE
+represents each stage-varying function with a spline basis. Let
+$B_1(z),\ldots,B_K(z)$ be cubic B-spline basis functions on $[0,1]$. Then
+\begin{align}
+a_j(z)
+&=
+\sum_{k=1}^{K}\alpha_{jk}B_k(z),
+\\
+c_j(z)
+&=
+\sum_{k=1}^{K}\kappa_{jk}B_k(z),
+\\
+b_{j\ell}(z)
+&=
+\sum_{k=1}^{K}\theta_{j\ell k}B_k(z).
+\end{align}
+
+For each target $j$, the design matrix concatenates three blocks: spline basis
+columns for the stage-specific intercept, interactions between the target's
+baseline value and the spline basis for self-history, and interactions between
+each candidate parent and the spline basis for directed parent effects:
+\begin{equation}
+\Phi_{ij}
+=
+\left[
+B(Z_i),
+Y_{ij}(t_{i0})B(Z_i),
+\{X_{i\ell}(t_{i0})B(Z_i)\}_{\ell \in \operatorname{pa}(j)}
+\right].
+\label{eq:bnlte_design}
+\end{equation}
+This expansion turns the non-stationary structural equation into a regularized
+linear model in spline coefficients while preserving a nonlinear dependence on
+disease stage.
+
+\subsection{Biological Graph Constraints}
+
+BN-LTE constrains candidate edge orientations using minimal disease-agnostic
+biological rules. Variables are assigned to ordered layers:
+\begin{equation}
+\mathrm{root}
+\prec
+\mathrm{fluid}
+\prec
+\mathrm{pathology}
+\prec
+\mathrm{neurodegeneration}
+\prec
+\mathrm{clinical}.
+\end{equation}
+Root variables, including age, sex, education, and APOE genotype, cannot have
+incoming edges. Clinical variables are treated as sinks and cannot serve as
+parents. Cross-layer edges are allowed only from earlier to later layers. Within
+the pathology layer, amyloid-to-tau edges are allowed, but tau-to-amyloid edges
+are not. Within the fluid layer, a coarse ordering is imposed from amyloid/A
+beta measures to p-tau217, GFAP, and NfL. These constraints do not hard-code a
+complete Alzheimer's cascade; they only rule out biologically implausible
+orientations such as a cognitive score causing genotype or future tau burden
+causing baseline amyloid.
+
+For each target, the admissible parent set is further screened by training-set
+coverage and ranked by association with the target rate. A small set of
+biologically motivated priority parents is prepended for tau-rate targets,
+including plasma p-tau217, amyloid-PET burden, A$\beta$42/40, APOE
+$\varepsilon 4$ dosage, and age. The final parent set is capped at a fixed
+maximum size to control variance in the high-dimensional spline design.
+
+\subsection{Estimation as Penalized Maximum A Posteriori Learning}
+
+For target $j$, let $r_j$ be the vector of finite training rates and $\Phi_j$
+the corresponding design matrix. BN-LTE estimates spline coefficients with
+ridge-regularized least squares:
+\begin{equation}
+\widehat{\beta}_j
+=
+\arg\min_{\beta_j}
+\left\{
+\|r_j-\Phi_j\beta_j\|_2^2
++\lambda_j\|\beta_j\|_2^2
+\right\}.
+\label{eq:bnlte_ridge}
+\end{equation}
+Equivalently, this is the maximum a posteriori estimator under a Gaussian noise
+model and an isotropic Gaussian prior on the spline coefficients:
+\begin{equation}
+r_j \mid \beta_j,\sigma_j^2
+\sim
+\mathcal{N}(\Phi_j\beta_j,\sigma_j^2 I),
+\qquad
+\beta_j \sim \mathcal{N}(0,\lambda_j^{-1}I).
+\end{equation}
+The regularization strength $\lambda_j$ is chosen by group-aware
+cross-validation on the training set, where folds are grouped by subject
+identifier. This keeps multiple longitudinal pairs from the same participant
+inside the same fold and prevents subject-level leakage during hyperparameter
+selection.
+
+The closed-form solution is
+\begin{equation}
+\widehat{\beta}_j
+=
+(\Phi_j^T\Phi_j+\lambda_j I)^{-1}\Phi_j^T r_j,
+\label{eq:bnlte_solution}
+\end{equation}
+after median imputation and training-set standardization of design columns.
+Although the model is formulated as a Bayesian-network SCM, the current
+implementation uses this penalized MAP estimator rather than full posterior
+MCMC over graph structures. Posterior graph sampling is therefore a natural
+extension for the next experimental phase, while the present estimator provides
+a stable, leakage-controlled, interpretable approximation suitable for model
+comparison and hypothesis generation.
+
+\subsection{Edge Curves and Causal Summaries}
+
+After fitting, the coefficient blocks are contracted with the spline basis on a
+dense grid $z\in[0,1]$ to recover stage-specific effect curves:
+\begin{equation}
+\widehat{b}_{j\ell}(z)
+=
+\sum_{k=1}^{K}
+\widehat{\theta}_{j\ell k}B_k(z).
+\end{equation}
+For comparability across variables with different units, edge curves are
+reported in standardized units:
+\begin{equation}
+\widetilde{b}_{j\ell}(z)
+=
+\widehat{b}_{j\ell}(z)
+\frac{\operatorname{sd}(X_\ell)}
+     {\operatorname{sd}(R_j)}.
+\label{eq:bnlte_standardized_edge}
+\end{equation}
+An edge is considered active at latent time $z$ when
+$|\widetilde{b}_{j\ell}(z)|$ exceeds a pre-specified threshold. The resulting
+activation profile identifies whether a candidate mechanism is early, late,
+transient, or persistent across the disease continuum. Optional subject-level
+bootstrapping repeats parent selection and coefficient estimation on resampled
+training subjects, producing an empirical edge-stability score. These summaries
+are used for mechanistic interpretation, but they should be read as
+regularized conditional effect summaries rather than formal posterior inclusion
+probabilities until the full graph-sampling extension is implemented.
+
+\subsection{Evaluation Protocol}
+
+Model evaluation is performed on held-out subjects. The primary prediction
+targets are annualized tau-PET rates and follow-up tau SUVR values in the
+selected target regions. Rate metrics measure whether the model captures the
+speed and direction of longitudinal change, while follow-up SUVR metrics measure
+absolute burden prediction:
+\begin{equation}
+\operatorname{MAE}_{\mathrm{rate}}
+=
+\frac{1}{Nq}
+\sum_{i,j}
+\left|
+R_{ij}-\widehat{R}_{ij}
+\right|,
+\end{equation}
+\begin{equation}
+\operatorname{MAE}_{\mathrm{SUVR}}
+=
+\frac{1}{Nq}
+\sum_{i,j}
+\left|
+Y_{ij}(t_{i1})-\widehat{Y}_{ij}(t_{i1})
+\right|.
+\end{equation}
+Spatial Spearman correlation across regions is computed per subject to assess
+whether the predicted spatial pattern of burden matches the empirical pattern.
+Delta Spearman correlation is computed on the change vector
+$Y_i(t_{i1})-Y_i(t_{i0})$ to test whether the model captures the spatial
+ordering of progression beyond baseline persistence.
+
+BN-LTE is compared against network diffusion, epidemic spreading,
+susceptible-infected-recovered spreading, and baseline persistence. The
+graph-spreading baselines are fit on the full 68-region tau state using the
+group-average connectome, while BN-LTE is fit directly to selected regional
+annualized tau rates. This comparison is intentionally conservative for
+absolute follow-up SUVR, because baseline persistence already explains much of
+the spatial rank structure; the more informative test for disease dynamics is
+the held-out rate and delta-rank prediction.
+
+\subsection{Interpretation}
+
+BN-LTE should be interpreted as a stage-aware, longitudinal causal forecasting
+model. The temporal design gives every edge the direction ``baseline state
+predicts future rate''; the latent time embedding lets the same edge vary across
+disease stage; and the biological constraints rule out implausible orientations
+without hard-coding a complete disease cascade. A positive edge from baseline
+amyloid burden to future tau rate, for example, means that among subjects with
+similar modeled covariates and latent disease stage, higher baseline amyloid is
+associated with a higher subsequent tau accumulation rate in that target
+region.
+
+The model does not by itself establish randomized interventional causality,
+because ADNI is observational and unmeasured confounding remains possible.
+Nevertheless, its leakage-controlled longitudinal orientation, interpretable
+latent time, stage-varying effects, and explicit graph constraints make it a
+useful framework for generating and testing mechanistic hypotheses about the
+ordering of amyloid, tau, neurodegeneration, and cognition.

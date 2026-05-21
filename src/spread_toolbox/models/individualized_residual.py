@@ -60,6 +60,7 @@ def build_individualized_residual_features(
     pair_covariates: dict[str, np.ndarray] | None = None,
     regional_covariates: dict[str, np.ndarray] | None = None,
     include_region_bias: bool = True,
+    backbone_name: str = "fkpp",
 ) -> ResidualFeatureLibrary:
     """Build physics, subject, and regional features for residual forecasting."""
 
@@ -87,13 +88,13 @@ def build_individualized_residual_features(
     names = [
         "baseline_tau",
         "baseline_tau^2",
-        "fkpp_prediction",
-        "fkpp_delta",
-        "fkpp_delta_rate",
-        "fkpp_growth_drive",
-        "fkpp_diffusion_drive",
+        f"{backbone_name}_prediction",
+        f"{backbone_name}_delta",
+        f"{backbone_name}_delta_rate",
+        f"{backbone_name}_growth_drive",
+        f"{backbone_name}_diffusion_drive",
         "time_years*baseline_tau",
-        "time_years*fkpp_delta_rate",
+        f"time_years*{backbone_name}_delta_rate",
         "connectome_degree",
         "connectome_degree*baseline_tau",
     ]
@@ -120,8 +121,8 @@ def build_individualized_residual_features(
             [
                 covariate_name,
                 f"{covariate_name}*baseline_tau",
-                f"{covariate_name}*fkpp_delta",
-                f"{covariate_name}*fkpp_growth_drive",
+                f"{covariate_name}*{backbone_name}_delta",
+                f"{covariate_name}*{backbone_name}_growth_drive",
             ]
         )
         features.extend([np.broadcast_to(expanded, baseline.shape), expanded * baseline, expanded * fkpp_delta, expanded * growth_drive])
@@ -134,8 +135,8 @@ def build_individualized_residual_features(
             [
                 covariate_name,
                 f"{covariate_name}*baseline_tau",
-                f"{covariate_name}*fkpp_delta",
-                f"{covariate_name}*fkpp_growth_drive",
+                f"{covariate_name}*{backbone_name}_delta",
+                f"{covariate_name}*{backbone_name}_growth_drive",
             ]
         )
         features.extend([values, values * baseline, values * fkpp_delta, values * growth_drive])

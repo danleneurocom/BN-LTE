@@ -192,6 +192,17 @@ modeling:
   ndm_individualized_residual_max_train_rows: 60000
   ndm_individualized_residual_shrinkage_candidates: [0, 0.25, 0.5, 0.75, 1.0]
   ndm_individualized_residual_region_bias: true
+  # BN-LTE prototype: Bayesian-network latent-time embedding.
+  # This is an empirical, train-only prototype for the currently available
+  # longitudinal tau tables; the full proposal requires multimodal ADNI + UKB.
+  bn_lte_max_regions: 12
+  bn_lte_spline_knots: 4
+  bn_lte_spline_degree: 3
+  bn_lte_max_parents_per_child: 5
+  bn_lte_ridge_alphas: [1.0, 10.0, 100.0, 1000.0, 10000.0]
+  bn_lte_edge_effect_threshold: 0.01
+  bn_lte_bootstrap_iterations: 50
+  bn_lte_pip_threshold: 0.5
   am_fkpp_steps_per_year: 12
   am_fkpp_laplacian_normalization: "spectral"
   am_fkpp_optimizer_maxiter: 120
@@ -318,3 +329,9 @@ outputs:
   ndm_individualized_residual_likelihood_metrics: "ndm_individualized_residual_likelihood_metrics.csv"
   ndm_individualized_residual_terms: "ndm_individualized_residual_terms.csv"
   ndm_individualized_residual_report: "ndm_individualized_residual_report.json"
+  bn_lte_pair_metrics: "bn_lte_iteration_pair_metrics.csv"
+  bn_lte_metrics_summary: "bn_lte_iteration_metrics_summary.csv"
+  bn_lte_edge_effects: "bn_lte_edge_effects.csv"
+  bn_lte_bootstrap_edges: "bn_lte_bootstrap_edges.csv"
+  bn_lte_report: "bn_lte_iteration_report.json"
+  bn_lte_findings: "bn_lte_iteration_findings.md"

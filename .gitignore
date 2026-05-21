@@ -28,6 +28,7 @@ data/
 raw_data/
 BRAIN_DATA/
 BRAIN DATA/
+outputs/
 
 # Local configuration; keep *.example.* files tracked.
 .env
@@ -43,3 +44,4 @@ experiments/**/outputs/
 experiments/**/results/
 experiments/**/figures/
 experiments/**/cache/
+experiments/**/output_hcp/

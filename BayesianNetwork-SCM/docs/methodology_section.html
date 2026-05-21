@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Methodology: Dynamic BN-SCM</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+  type="text/javascript"></script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Methodology: Dynamic BN-SCM</h1>
+</header>
+<p>This section documents the methodology <em>as implemented</em> in the
+<code>BayesianNetwork-SCM/bayesian_network_scm/</code> package and
+exercised by <code>run_dynamic_bn_scm.py</code> and
+<code>run_hypothesis_experiments.py</code>. All numbers and defaults
+below are taken directly from the source code.</p>
+<h1 id="design-overview">Design overview</h1>
+<p>The model is a leakage-controlled, longitudinal structural causal
+model for multimodal Alzheimer’s disease progression. The primary object
+is <em>not</em> a same-time cross-sectional DAG, which is known to be
+vulnerable to reverse orientation and unmeasured confounding. Instead,
+for each subject we form a <strong>baseline-to-follow-up pair</strong>
+and model <span class="math display">\[\text{baseline state } X(t_0)
+\;\longrightarrow\; \text{annualized rate } R = \frac{Y(t_1) -
+Y(t_0)}{\Delta t},\]</span> with all candidate parents pinned to the
+baseline visit <span class="math inline">\(t_0\)</span>. Future target
+values can therefore never enter the predictor set, which gives the
+graph an unambiguous temporal orientation and prevents target
+leakage.</p>
+<p>For an outcome <span class="math inline">\(j\)</span> (a regional tau
+rate or a cognitive rate) and a subject-pair <span
+class="math inline">\(i\)</span>, the structural equation is <span
+class="math display">\[\begin{equation}
+R_{ij} \;=\; a_j(Z_i) \;+\; c_j(Z_i)\, Y_{ij}(t_0) \;+\; \sum_{\ell \in
+\mathrm{pa}(j)} \gamma_{j\ell}\, b_{j\ell}(Z_i)\, X_{i\ell}(t_0) \;+\;
+\varepsilon_{ij},
+\label{eq:scm}
+\end{equation}\]</span> where</p>
+<ul>
+<li><p><span class="math inline">\(R_{ij} = (Y_{ij}(t_1) -
+Y_{ij}(t_0))/\Delta t_i\)</span> is the annualized rate target,</p></li>
+<li><p><span class="math inline">\(Z_i \in [0,1]\)</span> is a
+train-only <strong>explainable disease pseudotime</strong> (§<a
+href="#sec:pseudotime" data-reference-type="ref"
+data-reference="sec:pseudotime">3</a>),</p></li>
+<li><p><span class="math inline">\(a_j(Z)\)</span> is a
+disease-stage-varying intercept (trajectory),</p></li>
+<li><p><span class="math inline">\(c_j(Z)\, Y_{ij}(t_0)\)</span> is a
+pseudotime-varying <strong>self-history / autonomous</strong>
+progression term,</p></li>
+<li><p><span class="math inline">\(b_{j\ell}(Z)\)</span> is the
+pseudotime-varying direct effect from baseline parent <span
+class="math inline">\(\ell\)</span> on target <span
+class="math inline">\(j\)</span>, restricted to the biologically
+admissible parent set <span
+class="math inline">\(\mathrm{pa}(j)\)</span>,</p></li>
+<li><p><span class="math inline">\(\gamma_{j\ell}\)</span> is an
+edge-inclusion proxy obtained by thresholding the bootstrap stability of
+<span class="math inline">\(|b_{j\ell}(Z)|\)</span> over <span
+class="math inline">\(Z\)</span> (§<a href="#sec:stability"
+data-reference-type="ref"
+data-reference="sec:stability">7</a>).</p></li>
+</ul>
+<p>The corresponding biomarker forecast is the explicit Euler step <span
+class="math display">\[\begin{equation}
+Y_{ij}(t_1) \;=\; Y_{ij}(t_0) \;+\; \Delta t_i \cdot R_{ij}.
+\label{eq:forecast}
+\end{equation}\]</span> Equation <a href="#eq:scm"
+data-reference-type="eqref" data-reference="eq:scm">[eq:scm]</a> is a
+varying-coefficient extension of a standard linear SCM: fixing <span
+class="math inline">\(Z\)</span> recovers an ordinary linear regression
+of rate on baseline state, whereas allowing the coefficients to vary
+with <span class="math inline">\(Z\)</span> lets the same causal parents
+have stage-dependent effect magnitudes (e.g., early-only or late-only
+mechanisms).</p>
+<h1 id="data-construction">Data construction</h1>
+<p>The pair table is assembled in <code>data.py</code> by
+<code>build_multimodal_pair_dataset()</code> from the ENIGMA-format ADNI
+cohort exports under
+<code>experiments/group_average_enigma/output/</code>.</p>
+<h4 id="pairs.">Pairs.</h4>
+<p>Each row is one (baseline, follow-up) tau-PET pair. We require
+<code>baseline_loniuid</code> and <code>target_loniuid</code> to resolve
+in <code>cohort_tau_observations.csv</code>, finite baseline and
+follow-up dates, and <span class="math inline">\(\Delta t_i =
+\texttt{target\_time\_years} &gt; 0\)</span>. Tau follow-up is always
+present because the cohort was constructed from longitudinal FTP tau-PET
+pairs.</p>
+<h4 id="baseline-predictors.">Baseline predictors.</h4>
+<p>For every pair <span class="math inline">\(i\)</span>, baseline
+predictors are taken from the visit nearest in time to the baseline
+tau-PET date, within <code>max_date_distance_days = 1095</code>
+(3 years).</p>
+<table style="width:92%;">
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 72%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Layer</strong></th>
+<th style="text-align: left;"><strong>Features (30 total)</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">root</td>
+<td style="text-align: left;"><code>age_years</code>,
+<code>sex_female</code>, <code>education_years</code>,
+<code>apoe4_dose</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">fluid</td>
+<td style="text-align: left;"><code>plasma_pt217</code>,
+<code>plasma_ab42_ab40</code>, <code>plasma_nfl</code>,
+<code>plasma_gfap</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">pathology</td>
+<td style="text-align: left;"><code>amyloid_summary_suvr</code>,
+<code>amyloid_centiloids</code>, <code>amyloid_positive</code>,
+<code>tau_meta_temporal</code>, plus 10 regional tau SUVR</td>
+</tr>
+<tr>
+<td style="text-align: left;">neurodegeneration</td>
+<td style="text-align: left;"><code>mri_hippocampus_volume</code>,
+<code>mri_amygdala_volume</code>,
+<code>mri_temporal_cortical_volume</code>,
+<code>mri_temporal_cortical_thickness</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">clinical</td>
+<td style="text-align: left;"><code>adas13</code>, <code>mmse</code>,
+<code>ravlt_immediate</code>, <code>cdrsb</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>apoe4_dose</code> is the count of <span
+class="math inline">\(\varepsilon 4\)</span> alleles in the APOE
+genotype. MRI volumes and thicknesses are means over left/right
+entorhinal, fusiform, inferiortemporal, and middletemporal cortical
+labels parsed from the FreeSurfer dictionary; hippocampal and amygdalar
+segmentation volumes are bilateral averages. Rows with overall
+FreeSurfer QC <code>FAIL</code> and amyloid scans with QC fail flags are
+excluded.</p>
+<h4 id="regional-tau-predictors-and-targets.">Regional tau predictors
+and targets.</h4>
+<p>Ten temporo-parietal aparc labels are used:
+<code>L/R_entorhinal</code>, <code>L/R_fusiform</code>,
+<code>L/R_inferiortemporal</code>, <code>L/R_middletemporal</code>,
+<code>L/R_inferiorparietal</code>, mapped to ADNI tau columns via
+<code>adni_to_enigma_aparc_mapping.csv</code>. The target vector
+contains 15 entries: <code>tau_rate:meta_temporal</code> (composite SUVR
+rate), <code>tau_rate:</code><em><code>region</code></em> for each of
+the 10 regions above, and
+<code>cognitive_rate:{adas13, mmse, ravlt_immediate, cdrsb}</code>. Each
+target is the simple annualized rate <span class="math inline">\(R_{ij}
+= (Y_{ij}(t_1) -
+Y_{ij}(t_0))/\Delta t_i\)</span>. Cognitive rates are computed only when
+both nearest-to-baseline and nearest-to-follow-up scores are finite
+within the 1095-day window.</p>
+<h4 id="subject-level-split.">Subject-level split.</h4>
+<p><code>make_subject_split()</code> partitions the <strong>unique
+RIDs</strong> (not pairs) into 60 % train / 20 % validation / 20 % test
+with random seed <code>20260519</code>. All pairs from a given subject
+are kept inside a single fold, which is essential for leakage control:
+the same subject never appears as both a training row and a held-out
+row.</p>
+<h1 id="sec:pseudotime">Explainable pseudotime <span
+class="math inline">\(Z\)</span></h1>
+<p><code>fit_pseudotime()</code> in <code>pseudotime.py</code> defines
+<span class="math inline">\(Z\)</span> so the model can capture
+stage-dependent dynamics without using calendar time or future
+information.</p>
+<h4 id="feature-selection.">Feature selection.</h4>
+<p>Given a <em>mode</em> (<code>tau_free</code>, <code>global</code>,
+<code>clinical_free</code>, <code>pt217_free</code>), only features
+admissible for the mode with training finite-value coverage <span
+class="math inline">\(\geq 0.5\)</span> and non-zero training variance
+are retained. <code>tau_free</code> (the default) excludes all
+<code>tau</code>, <code>pT217</code>, and <code>pTau</code> features so
+that <span class="math inline">\(Z\)</span> is not endogenous to the tau
+targets of interest.</p>
+<h4 id="standardization-and-imputation.">Standardization and
+imputation.</h4>
+<p>Missing entries are filled with the column-wise training median;
+columns are then mean-centered and scaled to unit standard deviation
+(with a guard <span class="math inline">\(\text{scale} &gt;
+10^{-12}\)</span>).</p>
+<h4 id="linear-pseudotime-via-svd.">Linear pseudotime via SVD.</h4>
+<p>Let <span class="math inline">\(\tilde X_{\text{train}} \in
+\mathbb{R}^{n_{\text{train}} \times p}\)</span> be the standardized
+training feature matrix. We take the leading right singular vector <span
+class="math inline">\(w\)</span> of <span class="math inline">\(\tilde
+X_{\text{train}}\)</span>: <span class="math display">\[\begin{equation}
+\tilde X_{\text{train}} \;=\; U\,\Sigma\,V^\top, \qquad w = V_{:,1}.
+\label{eq:svd}
+\end{equation}\]</span> For any (training or held-out) row, the raw
+score is the projection <span class="math inline">\(s_i = \tilde
+X_i^\top w\)</span>. Scores are rescaled to <span
+class="math inline">\([0,1]\)</span> using the empirical 1st and 99th
+training percentiles <span class="math inline">\((s_{\text{lo}},
+s_{\text{hi}})\)</span>: <span class="math display">\[\begin{equation}
+Z_i \;=\; \mathrm{clip}\!\left(\frac{s_i - s_{\text{lo}}}{s_{\text{hi}}
+- s_{\text{lo}}},\,0,\,1\right).
+\label{eq:zscore}
+\end{equation}\]</span> This is the SVD-based, linear analog of a single
+principal axis of disease progression; using only the leading component
+makes <span class="math inline">\(Z\)</span> one-dimensional and
+interpretable.</p>
+<h4 id="orientation.">Orientation.</h4>
+<p>Because singular vectors are sign-ambiguous, <span
+class="math inline">\(w\)</span> is flipped so its correlation with a
+sign-coded disease-burden proxy is non-negative. The burden proxy is the
+mean of <span class="math inline">\(z\)</span>-scored features signed by
+<code>burden_sign()</code> (positive: <code>tau</code>,
+<code>pT217</code>, <code>amyloid</code>, <code>centiloid</code>,
+<code>nfl</code>, <code>gfap</code>, <code>adas13</code>,
+<code>cdrsb</code>; negative: <code>mmse</code>, <code>ravlt</code>,
+<code>volume</code>, <code>thickness</code>, <code>ab42_ab40</code>).
+This guarantees that higher <span class="math inline">\(Z\)</span>
+corresponds to higher disease burden, while leaving the geometry of
+<span class="math inline">\(Z\)</span> itself unchanged.</p>
+<h4 id="reportable-diagnostics.">Reportable diagnostics.</h4>
+<p>The model exposes feature loadings <span
+class="math inline">\(w\)</span>, per-subject contributions <span
+class="math inline">\(w_m \cdot z(X_{im})\)</span>, a diagnosis-group
+ordering of median <span class="math inline">\(Z\)</span> (CN <span
+class="math inline">\(&lt;\)</span> MCI <span
+class="math inline">\(&lt;\)</span> AD is the expected sanity check),
+and the explained-variance ratio of the leading singular value.</p>
+<h1 id="biological-graph-constraints">Biological graph constraints</h1>
+<p><code>CausalConstraints</code> in <code>constraints.py</code>
+restricts the set of admissible baseline parents for each rate
+target.</p>
+<h4 id="variable-layers.">Variable layers.</h4>
+<p>Every variable is assigned a layer with rank <span
+class="math inline">\(\text{root}(0) &lt; \text{fluid}(1) &lt;
+\text{pathology}(2) &lt; \text{neurodegeneration}(3) &lt;
+\text{clinical}(4)\)</span>. Layer inference uses keyword rules
+(e.g. <code>plasma</code>/<code>pt217</code>/<code>nfl</code>/<code>gfap</code>
+<span class="math inline">\(\to\)</span> <code>fluid</code>;
+<code>amyloid</code>/<code>tau</code> <span
+class="math inline">\(\to\)</span> <code>pathology</code>;
+<code>mri</code>/<code>volume</code>/<code>thickness</code> <span
+class="math inline">\(\to\)</span> <code>neurodegeneration</code>;
+<code>adas</code>/<code>mmse</code>/<code>ravlt</code>/<code>cdrsb</code>
+<span class="math inline">\(\to\)</span> <code>clinical</code>).</p>
+<h4 id="hard-constraints.">Hard constraints.</h4>
+<p>For <code>can_parent(parent, child)</code>, parent <span
+class="math inline">\(\ell\)</span> may direct an edge to child <span
+class="math inline">\(j\)</span> only if:</p>
+<ol>
+<li><p><span class="math inline">\(\text{parent} \neq
+\text{child}\)</span>;</p></li>
+<li><p>parent is not a clinical sink and child is not a root;</p></li>
+<li><p>either <span class="math inline">\(\mathrm{layer}(\text{parent})
+&lt; \mathrm{layer}(\text{child})\)</span> (cross-layer downstream),
+or</p></li>
+<li><p>parent and child are in the same layer <em>and</em> the
+same-layer rule below is satisfied.</p></li>
+</ol>
+<h4 id="same-layer-rules.">Same-layer rules.</h4>
+<ul>
+<li><p><code>root</code>, <code>clinical</code>,
+<code>neurodegeneration</code>: no within-layer edges.</p></li>
+<li><p><code>fluid</code>: ordered as <code>amyloid/ab42</code> <span
+class="math inline">\(&lt;\)</span> <code>pT217/pTau</code> <span
+class="math inline">\(&lt;\)</span> <code>gfap</code> <span
+class="math inline">\(&lt;\)</span> <code>nfl</code>; only
+parent-to-later-stage child edges are allowed.</p></li>
+<li><p><code>pathology</code>: only <code>amyloid</code> <span
+class="math inline">\(\to\)</span> <code>tau</code> is allowed; tau
+cannot drive amyloid; no edges within amyloid or within tau.</p></li>
+</ul>
+<p>This encodes the canonical AD cascade <span
+class="math inline">\(\text{root} \to \text{fluid} \to \text{amyloid}
+\to \text{tau} \to \text{neurodegeneration} \to
+\text{clinical}\)</span>, with diagnosis left out of the parent set
+entirely and reserved for validation and stratification.</p>
+<h1 id="varying-coefficient-design-matrix">Varying-coefficient design
+matrix</h1>
+<p><code>build_design_matrix()</code> in <code>dynamic_scm.py</code>
+constructs the per-target design that operationalizes Eq. <a
+href="#eq:scm" data-reference-type="eqref"
+data-reference="eq:scm">[eq:scm]</a>.</p>
+<h4 id="b-spline-basis-on-z.">B-spline basis on <span
+class="math inline">\(Z\)</span>.</h4>
+<p>Let <span class="math inline">\(B(Z) \in \mathbb{R}^{n \times
+K}\)</span> be a cubic B-spline basis with <span
+class="math inline">\(K\)</span> columns, built by
+<code>sklearn.preprocessing.SplineTransformer</code> with <span
+class="math inline">\(\text{degree}=3\)</span>, <span
+class="math inline">\(\text{n\_knots}=4\)</span>, <span
+class="math inline">\(\text{include\_bias}=\text{True}\)</span>, and
+constant extrapolation. The varying intercept and the varying parent
+effects are expanded as <span class="math display">\[\begin{equation}
+a_j(Z) = \sum_{k=1}^{K} \alpha_{jk} B_k(Z), \quad
+c_j(Z) = \sum_{k=1}^{K} \kappa_{jk} B_k(Z), \quad
+b_{j\ell}(Z) = \sum_{k=1}^{K} \theta_{j\ell k} B_k(Z).
+\label{eq:basis}
+\end{equation}\]</span> If the training set has too few unique <span
+class="math inline">\(Z\)</span> values to support the basis, the
+implementation falls back to a polynomial basis of width <span
+class="math inline">\(\min(4,\,\text{degree}+1)\)</span>.</p>
+<h4 id="design-columns.">Design columns.</h4>
+<p>For each target <span class="math inline">\(j\)</span> with chosen
+parent set <span class="math inline">\(\mathrm{pa}(j)\)</span>, the
+design row <span class="math inline">\(x_i\)</span> is the concatenation
+of three blocks:</p>
+<ol>
+<li><p><strong>Trajectory:</strong> the <span
+class="math inline">\(K\)</span> basis values <span
+class="math inline">\(B_k(Z_i)\)</span> <span
+class="math inline">\(\Rightarrow a_j(Z)\)</span>.</p></li>
+<li><p><strong>Self-history:</strong> <span
+class="math inline">\(Y_{ij}(t_0)\, B_k(Z_i)\)</span> for <span
+class="math inline">\(k=1,\dots,K\)</span> <span
+class="math inline">\(\Rightarrow c_j(Z)\,Y_{ij}(t_0)\)</span>.</p></li>
+<li><p><strong>Edge-by-stage interactions:</strong> <span
+class="math inline">\(X_{i\ell}(t_0)\, B_k(Z_i)\)</span> for each parent
+<span class="math inline">\(\ell \in \mathrm{pa}(j)\)</span> and <span
+class="math inline">\(k=1,\dots,K\)</span> <span
+class="math inline">\(\Rightarrow
+b_{j\ell}(Z)\,X_{i\ell}(t_0)\)</span>.</p></li>
+</ol>
+<p>The total design dimension for target <span
+class="math inline">\(j\)</span> is therefore <span
+class="math inline">\(D_j = K\,(2 + |\mathrm{pa}(j)|)\)</span>. The
+recovered effect curves (§<a href="#sec:stability"
+data-reference-type="ref" data-reference="sec:stability">7</a>) are
+computed by contracting these coefficients back through <span
+class="math inline">\(B(Z_{\text{grid}})\)</span>.</p>
+<h1 id="parent-selection-and-ridge-estimation">Parent selection and
+ridge estimation</h1>
+<h4 id="candidate-parents.">Candidate parents.</h4>
+<p>For target <span class="math inline">\(j\)</span>,
+<code>candidate_parents()</code> returns every feature <span
+class="math inline">\(\ell\)</span> that satisfies the layer/role
+constraints of §4 <em>and</em> has training coverage <span
+class="math inline">\(\geq 0.25\)</span>. Features are then ranked by
+the absolute Pearson correlation between <span
+class="math inline">\(X_\ell(t_0)\)</span> and <span
+class="math inline">\(R_j\)</span> on the training rows. A small set of
+biological priority features is prepended ahead of the correlation
+ranking (for <code>tau_rate:*</code>: <code>plasma_pt217</code>,
+<code>amyloid_summary_suvr</code>, <code>amyloid_centiloids</code>,
+<code>plasma_ab42_ab40</code>, <code>apoe4_dose</code>,
+<code>age_years</code>; for <code>cognitive_rate:*</code>:
+<code>tau_meta_temporal</code>, <code>mri_hippocampus_volume</code>,
+<code>amyloid_summary_suvr</code>, <code>plasma_nfl</code>,
+<code>age_years</code>). The final list is truncated to
+<code>max_parents_per_target</code> (default <span
+class="math inline">\(8\)</span> in <code>run_dynamic_bn_scm.py</code>,
+<span class="math inline">\(6\)</span> in
+<code>run_hypothesis_experiments.py</code>).</p>
+<h4 id="preprocessing.">Preprocessing.</h4>
+<p>Within <code>fit_ridge()</code>, rows with non-finite targets are
+dropped, design entries are imputed with column-wise training medians,
+and columns are mean-centered and scaled by their training standard
+deviation (with a <span class="math inline">\(&gt; 10^{-12}\)</span>
+guard).</p>
+<h4 id="ridge-solution.">Ridge solution.</h4>
+<p>Let <span class="math inline">\(\Phi_{\text{train}} \in \mathbb{R}^{n
+\times D}\)</span> be the standardized training design and <span
+class="math inline">\(r_{\text{train}}\)</span> the centered training
+rate target. The estimator solves <span
+class="math display">\[\begin{equation}
+\hat{\beta} \;=\; \arg\min_{\beta} \;\bigl\lVert r_{\text{train}} -
+\Phi_{\text{train}}\,\beta \bigr\rVert^2 + \alpha\,\lVert \beta \rVert^2
+\;=\; \bigl(\Phi_{\text{train}}^\top \Phi_{\text{train}} + \alpha\,
+I_D\bigr)^{-1} \Phi_{\text{train}}^\top r_{\text{train}},
+\label{eq:ridge}
+\end{equation}\]</span> with intercept <span
+class="math inline">\(\beta_0 =
+\mathrm{mean}(r_{\text{train}})\)</span>. Ridge regularization is used
+in place of an explicit second-order random-walk prior because the
+prototype estimates effects pointwise rather than sampling a posterior;
+the <span class="math inline">\(L_2\)</span> penalty plays the role of
+the inverse-variance hyperprior on the spline coefficients while
+remaining convex and closed form.</p>
+<h4 id="penalty-selection.">Penalty selection.</h4>
+<p>The penalty is chosen by <strong>subject-grouped 5-fold
+cross-validation</strong> using
+<code>sklearn.model_selection.GroupKFold</code> with groups equal to
+each pair’s <code>RID</code>. This guarantees that no subject appears in
+both the inner train and inner validation folds. The grid is <span
+class="math inline">\(\alpha \in \{1, 10, 100, 1000, 10000\}\)</span>
+and the <span class="math inline">\(\alpha\)</span> minimizing
+mean-squared prediction error across folds is retained.</p>
+<h4 id="effect-curve-reconstruction.">Effect-curve reconstruction.</h4>
+<p>Once <span class="math inline">\(\hat{\beta}\)</span> is fit, the
+effect of parent <span class="math inline">\(\ell\)</span> at any <span
+class="math inline">\(Z\)</span> is recovered as <span
+class="math display">\[\begin{equation}
+b_{j\ell}(Z) \;=\; \sum_{k=1}^{K} B_k(Z) \cdot
+\frac{\hat{\beta}[\mathrm{col}(\ell,k)]}{\mathrm{scale}[\mathrm{col}(\ell,k)]},
+\label{eq:effect}
+\end{equation}\]</span> with the analogous formula for <span
+class="math inline">\(c_j(Z)\)</span>. The grid <span
+class="math inline">\(Z = \mathrm{linspace}(0,1,101)\)</span> is used to
+evaluate all curves.</p>
+<h1 id="sec:stability">Edge stability and inclusion (<span
+class="math inline">\(\gamma_{j\ell}\)</span>)</h1>
+<p>A first inclusion screen is the <strong>effect-magnitude
+threshold</strong> <span
+class="math inline">\(\tau_{\text{eff}}\)</span>: edge <span
+class="math inline">\(\ell \to j\)</span> is “selected by effect” if
+<span class="math inline">\(\max_Z |b_{j\ell}(Z)| \geq
+\tau_{\text{eff}}\)</span>, with <span
+class="math inline">\(\tau_{\text{eff}} = 0.01\)</span> by default.</p>
+<p>A frequentist analog of an edge posterior inclusion probability (PIP)
+is then obtained by <strong>subject-block bootstrap</strong>
+(<code>bootstrap_edge_stability()</code>):</p>
+<ol>
+<li><p>Group training pairs by <code>RID</code>; let <span
+class="math inline">\(\mathcal{G}\)</span> be the set of training
+subjects.</p></li>
+<li><p>For <span class="math inline">\(b = 1,\dots,B\)</span> iterations
+(default <span class="math inline">\(B = 25\)</span>), sample <span
+class="math inline">\(|\mathcal{G}|\)</span> subjects from <span
+class="math inline">\(\mathcal{G}\)</span> with replacement, take all of
+each sampled subject’s training pairs to form a bootstrap training set,
+and re-fit the full Dynamic BN-SCM on this sample (with
+<code>cv_folds = 0</code> for speed).</p></li>
+<li><p>For each candidate parent–target pair <span
+class="math inline">\((\ell, j)\)</span>, record whether <span
+class="math inline">\(\max_Z |b_{j\ell}^{(b)}(Z)| \geq
+\tau_{\text{eff}}\)</span>.</p></li>
+</ol>
+<p>The empirical <strong>bootstrap inclusion probability</strong> is
+<span class="math display">\[\begin{equation}
+\mathrm{PIP}^{\text{boot}}_{j\ell} \;=\; \frac{1}{B} \sum_{b=1}^{B}
+\mathbf{1}\!\left\{ \max_Z \bigl| b_{j\ell}^{(b)}(Z) \bigr| \geq
+\tau_{\text{eff}} \right\},
+\label{eq:pip}
+\end{equation}\]</span> and is used as the implementation’s proxy for
+<span class="math inline">\(\gamma_{j\ell}\)</span>. Bootstrap blocks
+are at the subject level so resampled pairs respect the subject-level
+dependence structure of the cohort.</p>
+<h1 id="forecasting-and-evaluation">Forecasting and evaluation</h1>
+<p>For any held-out pair, the predicted SUVR (or score) follow-up is
+obtained from Eq. <a href="#eq:forecast" data-reference-type="eqref"
+data-reference="eq:forecast">[eq:forecast]</a> using the model’s
+predicted rate <span class="math inline">\(\hat{R}_{ij}\)</span>
+together with the observed <span class="math inline">\(\Delta
+t_i\)</span> and <span class="math inline">\(Y_{ij}(t_0)\)</span>.
+Evaluation metrics are computed per (target, split) pane and aggregated
+across targets:</p>
+<ul>
+<li><p>per-pair rate error metrics <code>mae</code>, <code>rmse</code>,
+<code>pearson</code>, <code>spearman</code> between observed and
+predicted rates;</p></li>
+<li><p>per-subject regional <code>delta_spearman</code> between observed
+and predicted baseline-to-follow-up change vectors;</p></li>
+<li><p>a compact summary of validation / test tau-rate MAE and Spearman
+(mean and median across targets) for ranking and model
+comparison.</p></li>
+</ul>
+<h1 id="pre-specified-hypothesis-tests">Pre-specified hypothesis
+tests</h1>
+<p><code>run_hypothesis_experiments.py</code> runs three pre-registered
+analyses on top of the base <code>tau_free</code> fit.</p>
+<h2 id="h1-pt217-to-tau-decoupling">H1 — pT217-to-tau decoupling</h2>
+<p>For every tau-rate target <span class="math inline">\(j\)</span> and
+the parent <span class="math inline">\(\ell =\)</span>
+<code>plasma_pT217</code>, the effect curve <span
+class="math inline">\(b_{\text{pT217},j}(Z)\)</span> is sliced into
+three windows <span class="math inline">\(\{\)</span>early: <span
+class="math inline">\(Z \leq 0.30\)</span>;  mid: <span
+class="math inline">\(0.30 &lt; Z &lt; 0.70\)</span>;  late: <span
+class="math inline">\(Z \geq 0.70\}\)</span>. We report</p>
+<ul>
+<li><p>the means of <span
+class="math inline">\(|b_{\text{pT217},j}(Z)|\)</span> in each
+window;</p></li>
+<li><p>the indicator <span
+class="math inline">\(\text{late\_less\_than\_early} =
+(\text{mean}_{\text{late}} &lt;
+\text{mean}_{\text{early}})\)</span>;</p></li>
+<li><p>a “near-zero late” indicator <span
+class="math inline">\(\text{mean}_{\text{late}} &lt;
+0.005\)</span>;</p></li>
+<li><p>a strict decoupling pattern that additionally requires the
+self-history effect to rise at late <span
+class="math inline">\(Z\)</span>;</p></li>
+<li><p>the decoupling coordinate <span
+class="math display">\[\begin{equation}
+Z_{\text{decouple}} \;=\; \min\bigl\{ Z \geq 0.30 \;:\;
+|b_{\text{pT217},j}(Z)| &lt; 0.005 \bigr\}.
+\label{eq:zdecouple}
+\end{equation}\]</span></p></li>
+</ul>
+<p>The prototype reports these as descriptive summaries of the ridge
+effect curves; turning them into a formal posterior probability would
+require a Bayesian sampler over <span
+class="math inline">\(\theta_{j\ell}\)</span>, which is explicitly out
+of scope for the current implementation.</p>
+<h2 id="h2-transcriptomic-resilience-gating">H2 — Transcriptomic
+resilience gating</h2>
+<p>The intended structural extension introduces a regional
+gene-expression modifier <span class="math inline">\(SR_r\)</span> of
+the amyloid <span class="math inline">\(\to\)</span> tau edge: <span
+class="math display">\[\begin{equation}
+R_{ij,r} \;=\; \cdots \;+\;
+b_{A\beta,\text{tau},r}(Z_i)\,\text{amyloid}_i(t_0) \;+\;
+d_{SR,r}(Z_i)\,\text{amyloid}_i(t_0)\,SR_r \;+\; \cdots,
+\label{eq:h2}
+\end{equation}\]</span> with expected sign <span
+class="math inline">\(d_{SR,r}(Z) &lt; 0\)</span> (regions with higher
+resilience expression have lower amyloid-driven tau acceleration).
+<code>evaluate_h2_data_gate()</code> scans the project tree for
+AHBA / Allen / gene-expression files and reports H2 as
+<code>not_testable_current_data</code> if none are found. The code
+intentionally refuses to fit a structural-proxy H2 model until a
+region-by-DK/aparc expression matrix is available.</p>
+<h2 id="h3-part-like-vs.-ad-continuum-spatial-route">H3 — PART-like
+vs. AD-continuum spatial route</h2>
+<p>Each pair is assigned an A/T status using the implemented data:</p>
+<ul>
+<li><p><span class="math inline">\(A+\)</span> if the baseline
+<code>amyloid_positive</code> feature <span class="math inline">\(\geq
+0.5\)</span>, else <span class="math inline">\(A-\)</span>;</p></li>
+<li><p><span class="math inline">\(T+\)</span> if baseline
+<code>tau_meta_temporal</code> <span class="math inline">\(\geq
+q_{75}\)</span> of the <strong>training cognitively-normal
+subset</strong>, else <span class="math inline">\(T-\)</span>.</p></li>
+</ul>
+<p>Subjects with non-finite amyloid or tau are labelled
+<code>unclassified</code>. The two analyzed groups are <span
+class="math inline">\(A{-}T{+}\)</span> (PART-like) and <span
+class="math inline">\(A{+}T{+}\)</span> (AD continuum). For each group,
+regional rate vectors are computed by averaging both the observed and
+the BN-SCM-predicted regional rates across pairs. Two quantities are
+reported: <span class="math display">\[\begin{align}
+\text{route\_similarity} &amp;\;=\; \rho_{\text{Spearman}}\bigl(
+\overline{R}_{\text{PART}},\, \overline{R}_{\text{AD}} \bigr),
+\label{eq:h3route} \\
+\text{kinetic\_ratio}_{\text{AD/PART}} &amp;\;=\;
+\frac{\mathrm{rms}(\overline{R}_{\text{AD}})}{\mathrm{rms}(\overline{R}_{\text{PART}})}.
+\label{eq:h3kin}
+\end{align}\]</span> H3 is declared “supported” only when both <span
+class="math inline">\(\text{route\_similarity} \geq 0.70\)</span> and
+<span class="math inline">\(\text{kinetic\_ratio} \geq 1.20\)</span> on
+the test split, encoding the “shared spatial route with kinetic
+acceleration” claim. Equation <a href="#eq:h3route"
+data-reference-type="eqref" data-reference="eq:h3route">[eq:h3route]</a>
+is computed both for observed-rate route similarity and for the
+BN-SCM-predicted-rate route, so that the model’s spatial inductive bias
+can be checked against the data.</p>
+<h1 id="sensitivity-analyses">Sensitivity analyses</h1>
+<p>Two robustness sweeps are run alongside H1–H3.</p>
+<h4 id="pseudotime-sensitivity.">Pseudotime sensitivity.</h4>
+<p>The full Dynamic BN-SCM is re-fit four times, once per pseudotime
+mode (<code>tau_free</code>, <code>global</code>,
+<code>clinical_free</code>, <code>pt217_free</code>), reporting the
+median test rate MAE/RMSE and the median test delta-Spearman. This
+isolates the effect of <span class="math inline">\(Z\)</span> from the
+effect of the parent set.</p>
+<h4 id="parent-ablations.">Parent ablations.</h4>
+<p>Starting from the <code>tau_free</code> model, candidate features are
+deleted in groups (<code>{plasma_pt217}</code>,
+<code>{amyloid_summary_suvr, amyloid_centiloids, amyloid_positive}</code>,
+<code>{plasma_ab42_ab40}</code>, <code>{apoe4_dose}</code>) and the
+model is re-fit and re-evaluated. Differences in test rate MAE versus
+the full model quantify how much each modality contributes to held-out
+tau-rate forecasting.</p>
+<h1 id="leakage-controls-and-limitations">Leakage controls and
+limitations</h1>
+<p>By construction, the implementation enforces:</p>
+<ul>
+<li><p>predictors are sampled at or before <span
+class="math inline">\(t_0\)</span>, never at <span
+class="math inline">\(t_1\)</span>;</p></li>
+<li><p>the subject split partitions unique <code>RID</code>s;</p></li>
+<li><p>pseudotime, ridge centering/scaling, <span
+class="math inline">\(\alpha\)</span> selection, parent ranking, and
+bootstrap blocks are all fit using <strong>training rows
+only</strong>;</p></li>
+<li><p>ridge <span class="math inline">\(\alpha\)</span> selection uses
+<code>GroupKFold</code> with <code>RID</code> groups so no subject’s
+pairs straddle the inner CV boundary;</p></li>
+<li><p>diagnosis is used only for stratification and reporting, never as
+a parent.</p></li>
+</ul>
+<p>Stated limitations carried directly in the code are:</p>
+<ol>
+<li><p>The estimator is a penalized (ridge) varying-coefficient
+regression with subject-block bootstrap stability, not a full posterior
+MCMC over the graph; reported edge probabilities should be read as
+bootstrap inclusion proxies, not Bayesian PIPs.</p></li>
+<li><p>H2 is gated off until a DK/aparc-aligned regional gene-expression
+matrix is provided.</p></li>
+<li><p>Brain-map panels visualize only the ten temporo-parietal target
+regions; un-modelled DK regions are greyed out.</p></li>
+<li><p>The H3 <span class="math inline">\(T+\)</span> threshold is
+currently derived from the training CN 75th percentile of
+<code>tau_meta_temporal</code>; a project-level tau-positivity threshold
+would be substituted if configured.</p></li>
+</ol>
+</body>
+</html>

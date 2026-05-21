@@ -8,10 +8,9 @@ disease-state features.  There are no independently fitted subject coefficients.
 Example form:
     dS_i/dt = Σ_m Σ_g beta_{m,g} * mechanism_m(S_i, C, A_i, T_i) * gate_g(subject)
 
-where gates are baseline/covariate summaries such as Braak tau burden,
-meta-temporal tau stage, amyloid burden, APOE4, p-tau181, and Laplacian
-eigenmode loadings.  Candidates are chosen by held-out validation
-delta-Spearman after dynamic ODE integration.
+where gates are baseline/covariate summaries such as Braak tau burden, amyloid
+burden, APOE4, p-tau181, and Laplacian eigenmode loadings.  Candidates are chosen
+by held-out validation delta-Spearman after dynamic ODE integration.
 """
 
 from __future__ import annotations
@@ -69,6 +68,7 @@ class GatedFit:
     ridge_alpha: float
     train_r2: float
     train_mse: float
+    regional_masks: dict[str, np.ndarray] | None = None
 
 
 def default_config_path() -> Path:
@@ -131,6 +131,7 @@ def main() -> int:
 
     model = SymbolicODEModel(adjacency, steps_per_year=12)
     braak_idx = build_braak_indices(dataset.region_labels)
+    regional_masks = build_braak_region_masks(dataset.region_labels)
     _, eigenvectors = np.linalg.eigh(laplacian)
     gate_matrix, all_gate_names = build_amortization_features(
         bl_s,
@@ -143,11 +144,6 @@ def main() -> int:
         eigenvectors,
         model.adj_norm,
     )
-    gate_matrix, all_gate_names = append_pair_temporal_gates(
-        gate_matrix,
-        all_gate_names,
-        dataset.pairs,
-    )
 
     gate_sets = build_gate_sets(all_gate_names)
     mechanism_sets = [
@@ -155,6 +151,10 @@ def main() -> int:
         ("amyloid_growth", "fickian", "autonomous_tau"),
         ("amyloid_growth", "fickian", "fickian_x_tau", "autonomous_tau"),
         ("growth", "amyloid_growth", "fickian", "fickian_x_tau", "tau_decay"),
+        (
+            "growth_braak_I_II", "growth_braak_III_IV", "growth_braak_V_VI",
+            "growth_braak_Other", "amyloid_growth", "fickian", "fickian_x_tau", "tau_decay",
+        ),
         ("growth", "amyloid_growth", "thickness_growth", "fickian", "fickian_x_tau", "tau_decay"),
     ]
     ridge_alphas = (10.0, 100.0, 1000.0, 10000.0)
@@ -181,6 +181,7 @@ def main() -> int:
                     all_gate_names=all_gate_names,
                     amyloid=amyloid,
                     thickness=thickness,
+                    regional_masks=regional_masks,
                     ridge_alpha=alpha,
                     fit_intercept=bool(args.rate_intercept),
                 )
@@ -232,6 +233,7 @@ def main() -> int:
         all_gate_names=all_gate_names,
         amyloid=amyloid,
         thickness=thickness,
+        regional_masks=regional_masks,
         ridge_alpha=float(best["ridge_alpha"]),
         fit_intercept=bool(args.rate_intercept),
     )
@@ -348,6 +350,21 @@ def build_braak_indices(region_labels: list[str]) -> dict[str, list[int]]:
             for stage, regions in braak.items()}
 
 
+def build_braak_region_masks(region_labels: list[str]) -> dict[str, np.ndarray]:
+    """Fixed regional vulnerability masks, not fitted per-region coefficients."""
+    indices = build_braak_indices(region_labels)
+    masks: dict[str, np.ndarray] = {}
+    assigned = np.zeros(len(region_labels), dtype=bool)
+    for stage, idxs in indices.items():
+        key = stage.replace("-", "_")
+        mask = np.zeros(len(region_labels), dtype=float)
+        mask[idxs] = 1.0
+        masks[key] = mask
+        assigned[idxs] = True
+    masks["Other"] = (~assigned).astype(float)
+    return masks
+
+
 def build_gate_sets(all_gate_names: list[str]) -> dict[str, list[str]]:
     disease = [
         "tau_mean", "tau_std", "tau_gini", "amyloid_mean",
@@ -358,52 +375,12 @@ def build_gate_sets(all_gate_names: list[str]) -> dict[str, list[str]]:
         "braak_early_ratio", "eigenmode_1_loading", "eigenmode_4_loading",
         "fickian_drive_magnitude", "tau_lr_asymmetry",
     ]
-    tempo = ["baseline_meta_temporal_suvr"]
     return {
         "constant": [],
         "disease_state": [name for name in disease if name in all_gate_names],
         "spatial_state": [name for name in spatial if name in all_gate_names],
-        "spatial_tempo_state": [name for name in spatial + tempo if name in all_gate_names],
         "full_state": [name for name in disease + spatial if name in all_gate_names],
-        "full_tempo_state": [name for name in disease + spatial + tempo if name in all_gate_names],
     }
-
-
-def append_pair_temporal_gates(
-    gate_matrix: np.ndarray,
-    gate_names: list[str],
-    pairs: list[dict[str, Any]],
-) -> tuple[np.ndarray, list[str]]:
-    """Append baseline temporal-stage gates from pair metadata.
-
-    ``baseline_meta_temporal_suvr`` is not a free subject coefficient.  It is a
-    measured baseline tau-stage scalar used to modulate the same global ODE
-    mechanisms, giving the unified equation a small, explicit tempo axis.
-    """
-    names = list(gate_names)
-    if "baseline_meta_temporal_suvr" in names:
-        return gate_matrix, names
-
-    values = np.asarray(
-        [parse_float(pair.get("baseline_meta_temporal_suvr")) for pair in pairs],
-        dtype=float,
-    )
-    if not np.any(np.isfinite(values)):
-        return gate_matrix, names
-
-    median = float(np.nanmedian(values))
-    values = np.where(np.isfinite(values), values, median)
-    return (
-        np.column_stack([np.asarray(gate_matrix, dtype=float), values]),
-        names + ["baseline_meta_temporal_suvr"],
-    )
-
-
-def parse_float(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float("nan")
 
 
 def fit_gated_candidate(
@@ -419,8 +396,10 @@ def fit_gated_candidate(
     all_gate_names: list[str],
     amyloid: np.ndarray | None,
     thickness: np.ndarray | None,
+    regional_masks: dict[str, np.ndarray] | None = None,
     ridge_alpha: float,
     fit_intercept: bool,
+    sample_weight: np.ndarray | None = None,
 ) -> GatedFit:
     bl = np.asarray(baseline_scaled, dtype=float)
     obs = np.asarray(observed_scaled, dtype=float)
@@ -441,15 +420,20 @@ def fit_gated_candidate(
         [all_gate_names[i] for i in gate_indices],
         amyloid=amyloid,
         thickness=thickness,
+        regional_masks=regional_masks,
     )
     y = ((obs - bl) / np.maximum(t, 1.0e-6)[:, None]).reshape(-1)
+    weights_flat = flatten_sample_weight(sample_weight, n_pairs, n_reg)
     flat_mask = np.zeros(n_pairs * n_reg, dtype=bool)
     for i in np.asarray(train_indices, dtype=int):
         flat_mask[i * n_reg:(i + 1) * n_reg] = True
     X_flat = term_values.reshape(-1, term_values.shape[-1])
     finite = flat_mask & np.isfinite(y) & np.all(np.isfinite(X_flat), axis=1)
+    if weights_flat is not None:
+        finite &= np.isfinite(weights_flat) & (weights_flat > 0.0)
     X_train = X_flat[finite]
     y_train = y[finite]
+    w_train = weights_flat[finite] if weights_flat is not None else None
 
     design_mean = X_train.mean(axis=0)
     design_scale = X_train.std(axis=0)
@@ -457,7 +441,7 @@ def fit_gated_candidate(
     X_sc = (X_train - design_mean[None, :]) / design_scale[None, :]
 
     ridge = Ridge(alpha=float(ridge_alpha), fit_intercept=bool(fit_intercept))
-    ridge.fit(X_sc, y_train)
+    ridge.fit(X_sc, y_train, sample_weight=w_train)
     y_pred = ridge.predict(X_sc)
     ss_res = float(np.sum((y_train - y_pred) ** 2))
     ss_tot = float(np.sum((y_train - y_train.mean()) ** 2))
@@ -479,6 +463,7 @@ def fit_gated_candidate(
         ridge_alpha=float(ridge_alpha),
         train_r2=train_r2,
         train_mse=train_mse,
+        regional_masks=regional_masks,
     )
 
 
@@ -491,7 +476,6 @@ def predict_gated_candidate(
     gate_matrix: np.ndarray,
     amyloid: np.ndarray | None,
     thickness: np.ndarray | None,
-    tempo_values: np.ndarray | None = None,
 ) -> np.ndarray:
     bl = np.asarray(baseline_scaled, dtype=float)
     t = np.asarray(time_years, dtype=float)
@@ -501,13 +485,6 @@ def predict_gated_candidate(
 
     amy = fill_nan(np.asarray(amyloid, dtype=float), n_pairs, n_reg) if amyloid is not None else None
     thick = fill_nan(np.asarray(thickness, dtype=float), n_pairs, n_reg) if thickness is not None else None
-    tempo = (
-        np.asarray(tempo_values, dtype=float).reshape(n_pairs)
-        if tempo_values is not None
-        else np.ones(n_pairs, dtype=float)
-    )
-    if tempo.shape != (n_pairs,):
-        raise ValueError(f"tempo_values must have shape {(n_pairs,)}, got {tempo.shape}.")
 
     states = np.clip(bl, 0.0, 1.0).copy()
     remaining = t.copy()
@@ -522,11 +499,11 @@ def predict_gated_candidate(
             fit.gate_names,
             amyloid=amy[idx] if amy is not None else None,
             thickness=thick[idx] if thick is not None else None,
+            regional_masks=fit.regional_masks,
         )
         X = term_values.reshape(-1, term_values.shape[-1])
         X_sc = (X - fit.design_mean[None, :]) / fit.design_scale[None, :]
         rate = fit.intercept + X_sc @ fit.coefficients
-        rate = rate.reshape(S.shape) * tempo[idx][:, None]
         return np.clip(np.nan_to_num(rate, nan=0.0, posinf=0.0, neginf=0.0), -1.0, 1.0).reshape(S.shape)
 
     while np.any(remaining > 0.0):
@@ -552,6 +529,7 @@ def build_design(
     *,
     amyloid: np.ndarray | None,
     thickness: np.ndarray | None,
+    regional_masks: dict[str, np.ndarray] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     S = np.asarray(state, dtype=float)
     n_pairs, n_reg = S.shape
@@ -577,6 +555,14 @@ def build_design(
         "autonomous_tau": (S**2) * (1.0 - S),
         "tau_decay": -S,
     }
+    if regional_masks:
+        for name, raw_mask in regional_masks.items():
+            mask = np.asarray(raw_mask, dtype=float)
+            if mask.shape != (n_reg,):
+                raise ValueError(f"Regional mask {name!r} must have shape {(n_reg,)}, got {mask.shape}.")
+            local_terms[f"growth_braak_{name}"] = growth * mask[None, :]
+            local_terms[f"amyloid_growth_braak_{name}"] = amy * growth * mask[None, :]
+            local_terms[f"decay_braak_{name}"] = -S * mask[None, :]
     gate_columns = [np.ones(n_pairs, dtype=float)]
     gate_labels = ["1"]
     if gates.size:
@@ -597,6 +583,24 @@ def standardize_gates(gate_raw: np.ndarray, mean: np.ndarray, scale: np.ndarray)
     if gate_raw.shape[1] == 0:
         return gate_raw.astype(float)
     return np.nan_to_num((gate_raw - mean[None, :]) / scale[None, :], nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def flatten_sample_weight(sample_weight: np.ndarray | None, n_pairs: int, n_reg: int) -> np.ndarray | None:
+    if sample_weight is None:
+        return None
+    weights = np.asarray(sample_weight, dtype=float)
+    if weights.shape == (n_pairs,):
+        weights = np.repeat(weights[:, None], n_reg, axis=1)
+    if weights.shape != (n_pairs, n_reg):
+        raise ValueError(f"sample_weight must have shape {(n_pairs,)} or {(n_pairs, n_reg)}, got {weights.shape}.")
+    finite_positive = np.isfinite(weights) & (weights > 0.0)
+    if not np.any(finite_positive):
+        raise ValueError("sample_weight contains no finite positive entries.")
+    safe = weights.copy()
+    safe[~finite_positive] = np.nan
+    median = float(np.nanmedian(safe))
+    safe = np.where(finite_positive, safe, median)
+    return (safe / np.mean(safe)).reshape(-1)
 
 
 def summarize_split(pair_metrics: list[dict[str, Any]], split_name: str) -> dict[str, float]:
@@ -644,115 +648,6 @@ def top_terms(fit: GatedFit, *, n: int) -> list[dict[str, Any]]:
         }
         for i in order
     ]
-
-
-def fit_endpoint_tempos(
-    baseline_scaled: np.ndarray,
-    observed_scaled: np.ndarray,
-    predicted_scaled: np.ndarray,
-    *,
-    indices: np.ndarray,
-    bounds: tuple[float, float] = (0.0, 4.0),
-) -> np.ndarray:
-    """Fit one nonnegative endpoint tempo per training pair.
-
-    The fitted scalar answers: how much faster/slower should the selected
-    unified trajectory move for this subject, preserving its predicted spatial
-    direction?  It is used only as a supervised target for a baseline-feature
-    tempo model; held-out subjects receive predicted tempo values.
-    """
-    bl = np.asarray(baseline_scaled, dtype=float)
-    obs = np.asarray(observed_scaled, dtype=float)
-    pred = np.asarray(predicted_scaled, dtype=float)
-    lo, hi = float(bounds[0]), float(bounds[1])
-    tempos = np.ones(len(indices), dtype=float)
-    for k, i in enumerate(np.asarray(indices, dtype=int)):
-        predicted_delta = pred[i] - bl[i]
-        observed_delta = obs[i] - bl[i]
-        denom = float(np.dot(predicted_delta, predicted_delta))
-        if denom <= 1.0e-12:
-            tempos[k] = 1.0
-            continue
-        tempos[k] = float(np.clip(np.dot(predicted_delta, observed_delta) / denom, lo, hi))
-    return tempos
-
-
-def fit_tempo_ridge(
-    tempo_train: np.ndarray,
-    feature_matrix: np.ndarray,
-    *,
-    train_indices: np.ndarray,
-    pair_groups: np.ndarray,
-    feature_names: list[str],
-    selected_feature_names: list[str],
-    alphas: tuple[float, ...] = (10.0, 100.0, 1000.0, 10000.0),
-    cv_folds: int = 5,
-) -> tuple[np.ndarray, dict[str, Any]]:
-    """Predict latent tempo from baseline features with subject-group CV."""
-    from sklearn.linear_model import Ridge
-    from sklearn.model_selection import GroupKFold
-
-    selected = [feature_names.index(name) for name in selected_feature_names if name in feature_names]
-    if not selected:
-        raise ValueError("No tempo features were selected.")
-    X_all = np.asarray(feature_matrix, dtype=float)[:, selected]
-    train = np.asarray(train_indices, dtype=int)
-    y_train = np.asarray(tempo_train, dtype=float)
-    if y_train.shape != (train.size,):
-        raise ValueError(f"tempo_train must have shape {(train.size,)}, got {y_train.shape}.")
-
-    X_train = X_all[train]
-    mean = X_train.mean(axis=0)
-    scale = X_train.std(axis=0)
-    scale = np.where(np.isfinite(scale) & (scale > 1.0e-10), scale, 1.0)
-    Xs = (X_train - mean[None, :]) / scale[None, :]
-    groups = np.asarray(pair_groups, dtype=str)[train]
-    unique_groups = np.unique(groups)
-    folds = min(int(cv_folds), unique_groups.size)
-    cv_rows: list[dict[str, Any]] = []
-    best_alpha = float(alphas[0])
-    best_mse = float("inf")
-    if folds >= 2:
-        splitter = GroupKFold(n_splits=folds)
-        for alpha in alphas:
-            fold_mse = []
-            for tr_pos, va_pos in splitter.split(Xs, y_train, groups):
-                model = Ridge(alpha=float(alpha), fit_intercept=True)
-                model.fit(Xs[tr_pos], y_train[tr_pos])
-                fold_mse.append(float(np.mean((model.predict(Xs[va_pos]) - y_train[va_pos]) ** 2)))
-            mse = float(np.mean(fold_mse))
-            cv_rows.append({"alpha": float(alpha), "cv_mse": mse, "folds": folds})
-            if mse < best_mse:
-                best_mse = mse
-                best_alpha = float(alpha)
-    else:
-        cv_rows.append({"alpha": best_alpha, "cv_mse": float("nan"), "folds": folds})
-
-    final = Ridge(alpha=best_alpha, fit_intercept=True)
-    final.fit(Xs, y_train)
-    pred_train = final.predict(Xs)
-    ss_res = float(np.sum((y_train - pred_train) ** 2))
-    ss_tot = float(np.sum((y_train - y_train.mean()) ** 2))
-    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0.0 else float("nan")
-
-    X_all_scaled = (X_all - mean[None, :]) / scale[None, :]
-    tempo_pred = np.clip(final.predict(X_all_scaled), 0.0, 4.0)
-    order = np.argsort(np.abs(final.coef_))[::-1]
-    report = {
-        "features": [feature_names[i] for i in selected],
-        "ridge_alpha": best_alpha,
-        "cv": cv_rows,
-        "train_r2": r2,
-        "tempo_train_mean": float(np.mean(y_train)),
-        "tempo_train_std": float(np.std(y_train)),
-        "tempo_pred_train_mean": float(np.mean(tempo_pred[train])),
-        "tempo_pred_train_std": float(np.std(tempo_pred[train])),
-        "top_features": [
-            {"feature": feature_names[selected[int(i)]], "coefficient": float(final.coef_[int(i)])}
-            for i in order[:10]
-        ],
-    }
-    return tempo_pred, report
 
 
 def ablate_fit_terms(
