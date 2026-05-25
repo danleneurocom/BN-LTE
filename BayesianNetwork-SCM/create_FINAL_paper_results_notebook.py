@@ -34,10 +34,24 @@ NOTEBOOK = HERE / "FINAL.ipynb"
 PAPER_VALIDATION = HERE / "outputs" / "paper_validation"
 PAPER_EXTENDED = HERE / "outputs" / "paper_extended"
 MNI_VIS = HERE / "outputs" / "mni_brain_visualization"
+ML_BASELINES = HERE / "outputs" / "machine_learning_baselines"
 
-MODEL_ORDER = ["BayesianNetwork-SCM", "ESM", "SIR", "NDM", "S0 persistence"]
 BNLTE = "BayesianNetwork-SCM"
+ML_MODELS = ["ML-Prognostic Index", "AdaBoost Tau-Rate", "MLP-Lite"]
+MODEL_ORDER = [BNLTE, *ML_MODELS, "ESM", "SIR", "NDM", "S0 persistence"]
 BNLTE_COLOR = MODEL_COLORS[BNLTE]
+EXTRA_MODEL_COLORS = {
+    "ML-Prognostic Index": "#264653",
+    "AdaBoost Tau-Rate": "#E9C46A",
+    "MLP-Lite": "#F4A261",
+}
+SHORT_MODEL_NAMES = {
+    "BayesianNetwork-SCM": "BN-LTE",
+    "ML-Prognostic Index": "Prog. index",
+    "AdaBoost Tau-Rate": "AdaBoost",
+    "MLP-Lite": "MLP-lite",
+    "S0 persistence": "Persistence",
+}
 TEXT = "#111827"
 MUTED = "#4B5563"
 GRID = "#E5E7EB"
@@ -93,7 +107,20 @@ def load_source_tables() -> dict[str, pd.DataFrame]:
     missing = [str(path) for path in required.values() if not path.exists()]
     if missing:
         raise FileNotFoundError("Missing required source artifacts:\n" + "\n".join(missing))
-    return {name: pd.read_csv(path) for name, path in required.items()}
+    tables = {name: pd.read_csv(path) for name, path in required.items()}
+    optional_ml = {
+        "group_map": ML_BASELINES / "ml_group_map_progression_metrics.csv",
+        "fast_progressor": ML_BASELINES / "ml_fast_progressor_classification.csv",
+        "braak": ML_BASELINES / "ml_braak_ordering_summary.csv",
+        "repeated_summary": ML_BASELINES / "ml_pair_summary.csv",
+    }
+    if all(path.exists() for path in optional_ml.values()):
+        for key, path in optional_ml.items():
+            tables[key] = pd.concat([tables[key], pd.read_csv(path)], ignore_index=True, sort=False)
+        tables["ml_baselines_loaded"] = pd.DataFrame([{"loaded": True, "source_dir": str(ML_BASELINES)}])
+    else:
+        tables["ml_baselines_loaded"] = pd.DataFrame([{"loaded": False, "source_dir": str(ML_BASELINES)}])
+    return tables
 
 
 def build_selected_results_table(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -109,7 +136,7 @@ def build_selected_results_table(tables: dict[str, pd.DataFrame]) -> pd.DataFram
         metric="Group-map MAE, SUVR",
         table=group,
         value_col="group_map_mae_s1",
-        why="Strongest quantitative result: BN-LTE has the lowest group-average follow-up map error.",
+        why="Core forecasting endpoint; after adding ML baselines this shows whether BN-LTE remains competitive on group-average follow-up map error.",
         placement="Main Table 1 + Figure 1",
     )
     add_higher_is_better(
@@ -118,7 +145,7 @@ def build_selected_results_table(tables: dict[str, pd.DataFrame]) -> pd.DataFram
         metric="Delta-map Spearman",
         table=group,
         value_col="delta_map_spearman",
-        why="Shows that BN-LTE captures where tau increases, not only the final burden level.",
+        why="Shows whether BN-LTE captures where tau increases, not only the final burden level.",
         placement="Main Table 1 + Figure 1",
     )
     add_higher_is_better(
@@ -287,15 +314,21 @@ def add_lower_is_better(
 
 
 def format_advantage(bnlte: float, comparator: float, *, higher: bool) -> str:
+    diff = bnlte - comparator
+    if abs(diff) < 1.0e-12:
+        return "tied with best comparator"
     if not np.isfinite(comparator) or abs(comparator) < 1.0e-12:
-        return f"absolute difference {bnlte - comparator:+.3f}"
+        return f"absolute difference {diff:+.3f}"
     if higher:
-        diff = bnlte - comparator
+        if diff < 0:
+            return f"{abs(diff):.3f} below best comparator"
         if comparator <= 0.0 < bnlte:
             return f"{diff:+.3f} absolute gain; comparator <= 0"
         rel = diff / abs(comparator) * 100.0
         return f"{diff:+.3f} absolute; {rel:+.1f}% relative"
     reduction = (comparator - bnlte) / abs(comparator) * 100.0
+    if reduction < 0:
+        return f"{abs(reduction):.1f}% higher error than best comparator"
     return f"{reduction:.1f}% lower error"
 
 
@@ -376,7 +409,7 @@ def metric_scorecard(tables: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.
 def plot_compact_scorecard(path: Path, tables: dict[str, pd.DataFrame]) -> None:
     values, scores, ranks, metrics = metric_scorecard(tables)
     with plt.rc_context(publication_style()):
-        fig = plt.figure(figsize=(10.8, 5.2), constrained_layout=True)
+        fig = plt.figure(figsize=(11.4, 6.4), constrained_layout=True)
         gs = fig.add_gridspec(2, 2, width_ratios=[4.8, 1.55], height_ratios=[0.35, 4.0])
         title_ax = fig.add_subplot(gs[0, :])
         heat_ax = fig.add_subplot(gs[1, 0])
@@ -385,7 +418,7 @@ def plot_compact_scorecard(path: Path, tables: dict[str, pd.DataFrame]) -> None:
         title_ax.text(
             0.0,
             0.75,
-            "Main-paper scorecard: BN-LTE is strongest on spatial progression endpoints",
+            "Main-paper scorecard: BN-LTE versus ML and mechanistic baselines",
             fontsize=15,
             fontweight="bold",
             color=TEXT,
@@ -423,7 +456,7 @@ def draw_scorecard_heatmap(
     ax.xaxis.tick_top()
     ax.tick_params(axis="x", length=0, pad=8)
     ax.set_yticks(np.arange(len(MODEL_ORDER)))
-    ax.set_yticklabels([short_model(model) for model in MODEL_ORDER], fontsize=9.5)
+    ax.set_yticklabels([display_model(model) for model in MODEL_ORDER], fontsize=9.0)
     ax.tick_params(axis="y", length=0)
     ax.set_xticks(np.arange(-0.5, len(metrics), 1), minor=True)
     ax.set_yticks(np.arange(-0.5, len(MODEL_ORDER), 1), minor=True)
@@ -465,18 +498,21 @@ def draw_bnlte_lead_strip(ax: Any, values: pd.DataFrame, metrics: list[dict[str,
         if spec["direction"] == "higher":
             comp = comparator_values.max()
             advantage = bnlte - comp
-            lead_text = f"{advantage:+.3f}"
-            if comp <= 0.0 < bnlte:
-                lead_text += "\nabs."
+            if advantage < 0:
+                lead_text = f"{abs(advantage):.3f}\nbelow best"
+            elif comp <= 0.0 < bnlte:
+                lead_text = f"{advantage:+.3f}\nabs."
+            else:
+                lead_text = f"{advantage:+.3f}"
         else:
             comp = comparator_values.min()
             advantage = (comp - bnlte) / abs(comp) * 100.0 if abs(comp) > 1.0e-12 else np.nan
-            lead_text = f"{advantage:.1f}%\nlower"
+            lead_text = f"{advantage:.1f}%\nlower" if advantage >= 0 else f"{abs(advantage):.1f}%\nhigher"
         lead_specs.append((spec["label"].replace("\n", " "), lead_text))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, len(lead_specs))
     ax.axis("off")
-    ax.set_title("B. BN-LTE lead", loc="left", color=TEXT, pad=12)
+    ax.set_title("B. BN-LTE vs best", loc="left", color=TEXT, pad=12)
     for idx, (label, value) in enumerate(lead_specs[::-1]):
         y = idx + 0.5
         ax.add_patch(Rectangle((0.0, y - 0.36), 1.0, 0.72, facecolor="#FFF7ED", edgecolor="#FED7AA", linewidth=1.0))
@@ -503,7 +539,7 @@ def plot_fast_progressor_scorecard(path: Path, fast: pd.DataFrame) -> None:
             scores[key] = (values[key] - finite.min()) / (finite.max() - finite.min())
         ranks[key] = values[key].rank(ascending=False, method="min")
     with plt.rc_context(publication_style()):
-        fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.8), width_ratios=[2.8, 1.15], constrained_layout=True)
+        fig, axes = plt.subplots(1, 2, figsize=(8.8, 4.8), width_ratios=[2.8, 1.15], constrained_layout=True)
         fp_metrics = [{"key": key, "label": label, "fmt": "{:.3f}", "direction": "higher"} for key, label in metrics]
         draw_scorecard_heatmap(axes[0], values, scores, ranks, fp_metrics)
         axes[0].set_title("A. Fast-progressor scorecard", loc="left", color=TEXT, pad=12)
@@ -555,7 +591,11 @@ def plot_fast_progressor_ladder(path: Path, fast: pd.DataFrame) -> None:
 
 
 def model_color(model: str) -> str:
-    return MODEL_COLORS.get(model, "#9CA3AF")
+    return EXTRA_MODEL_COLORS.get(model, MODEL_COLORS.get(model, "#9CA3AF"))
+
+
+def display_model(model: str) -> str:
+    return SHORT_MODEL_NAMES.get(model, short_model(model))
 
 
 def model_alpha(model: str) -> float:
@@ -759,13 +799,13 @@ def panel_grouped(
 def build_report(selected: pd.DataFrame, supplementary: pd.DataFrame, figures: dict[str, Path]) -> dict[str, Any]:
     return {
         "purpose": "Curated final paper-results selection for a 9-page BN-LTE manuscript.",
-        "main_claim": "BN-LTE is strongest as a group-level, stage-aware spatial progression and causal interpretation model, not as a lowest subject-level raw MAE smoother.",
+        "main_claim": "BN-LTE remains competitive against recent lightweight ML baselines while uniquely providing stage-aware causal structure and dynamic edge interpretation.",
         "selected_results": selected.to_dict(orient="records"),
         "supplementary_or_deemphasized": supplementary.to_dict(orient="records"),
         "figures": {key: str(value) for key, value in figures.items()},
         "recommended_main_paper_layout": [
-            "Table 1: selected headline metrics from final_selected_results.csv.",
-            "Figure 1: compact scorecard summarizing group-map, topology, fast-progressor, and anatomical-ordering strengths.",
+            "Table 1: selected headline metrics from final_selected_results.csv, including added ML baselines.",
+            "Figure 1: compact scorecard comparing BN-LTE, ML baselines, and mechanistic baselines.",
             "Figure 2: network-aware BN-LTE progression scaffold.",
             "Figure 3: brain progression heatmap if space allows.",
             "Figure 4: fast-progressor scorecard or dynamic edge confidence, depending on the target venue's emphasis.",
@@ -773,7 +813,9 @@ def build_report(selected: pd.DataFrame, supplementary: pd.DataFrame, figures: d
         ],
         "guardrails": [
             "Do not claim BN-LTE is the best raw subject-level MAE model.",
+            "Do not claim BN-LTE dominates every predictive endpoint after adding ML baselines; the prognostic-index and AdaBoost baselines are strong forecasting comparators.",
             "Use group-average MAE and progression-topology metrics for the main quantitative claim.",
+            "Preserve the BN-LTE-specific causal interpretation claim separately from pure predictive accuracy.",
             "Use MNI/surface brain figures as regional summary visualizations, not voxelwise PET statistical maps.",
         ],
     }
@@ -794,13 +836,13 @@ def write_notebook(
 
 This notebook is the curated result packet for the 9-page manuscript. It intentionally selects the results that are both scientifically meaningful and favorable to the model's real strength.
 
-Core framing: BN-LTE should be presented as a group-level spatial progression and causal-interpretability model. Do not headline raw subject-level MAE, because that metric is dominated by small longitudinal changes and persistence-like baselines."""
+Core framing: BN-LTE should be presented as a group-level spatial progression and causal-interpretability model. After adding ML baselines, the fair claim is not that BN-LTE dominates every predictive metric; the fair claim is that it remains competitive while producing dynamic causal edges."""
         ),
         md("## Main Claim"),
         md(
-            """BN-LTE most clearly improves over NDM/ESM/SIR/persistence when the target is the **spatial pattern of disease progression** rather than individual-level absolute burden smoothing.
+            """BN-LTE most clearly improves over mechanistic NDM/ESM/SIR/persistence when the target is the **spatial pattern of disease progression** rather than individual-level absolute burden smoothing. Recent lightweight ML baselines are strong pure predictors, so they should be framed as forecasting comparators rather than causal explanations.
 
-Recommended wording: *BN-LTE reconstructs group-level tau progression topology and identifies fast progressors while providing interpretable dynamic causal edges.*"""
+Recommended wording: *BN-LTE provides competitive regional tau forecasting while reconstructing interpretable, stage-varying causal structure that pure ML baselines do not estimate.*"""
         ),
         md("## Main Table: Results To Use In The Paper"),
         md(static_table_markdown("final_selected_results", selected_path, selected)),
