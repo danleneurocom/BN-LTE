@@ -1,2 +1,0 @@
-"""SPREAD Toolbox package."""
-

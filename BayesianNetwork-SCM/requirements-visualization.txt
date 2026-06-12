@@ -1,3 +1,0 @@
-nilearn>=0.13.1
-matplotlib>=3.10.9
-pillow>=12.2.0

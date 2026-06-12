@@ -1,3 +1,0 @@
-RID,PTID,modality,image_id,series_id,study_id,scan_date,description,field_strength,download_priority,qc_status,note
-5265,007_S_5265,DWI,905404,609776,115377,2017-09-18,Axial MB DTI,3.0,Required / High,STUDY_OVERALLPASS=1; STUDY_PROTOCOL_STATUS=1; SERIES_QUALITY=2; PROTOCOL_STATUS=1; SERIES_SELECTED=TRUE; STUDY_RESCAN_REQUESTED=FALSE,Search this image_id or series_id in ADNI LONI Images tab.
-5265,007_S_5265,T1,905391,609766,115377,2017-09-18,Accelerated Sagittal MPRAGE,3.0,Required / High,STUDY_OVERALLPASS=1; STUDY_PROTOCOL_STATUS=1; SERIES_QUALITY=2; PROTOCOL_STATUS=1; SERIES_SELECTED=TRUE; STUDY_RESCAN_REQUESTED=FALSE,Search this image_id or series_id in ADNI LONI Images tab.
