@@ -39,8 +39,6 @@ python -m pip install -r requirements.txt
 
 ## Run BN-LTE
 
-Full ADNI tau-rate run:
-
 ```bash
 python BNLTE/run_bnlte.py \
   --project-root . \
@@ -50,16 +48,6 @@ python BNLTE/run_bnlte.py \
   --max-parents 8 \
   --bootstrap-iterations 25
 ```
-
-Fast smoke check:
-
-```bash
-python BNLTE/run_bnlte.py \
-  --project-root . \
-  --no-write \
-  --target-prefix tau_rate:L_entorhinal \
-  --max-parents 1 \
-  --bootstrap-iterations 0
 ```
 
 The full run writes `dynamic_bn_scm_report.json`, `dynamic_bn_scm_rate_metrics.csv`, `dynamic_bn_scm_edge_effects.csv`, `dynamic_bn_scm_bootstrap_edges.csv`, and `dynamic_bn_scm_findings.md` under the selected output directory.
