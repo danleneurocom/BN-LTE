@@ -1,4 +1,4 @@
-# BN-LTE Reproducibility Repository
+# BN-LTE: Bayesian Networks with Latent Time Embedding for Stage-Aware Causal Modeling of Alzheimer’s Disease Progression
 
 This repository contains the runnable BN-LTE pipeline for longitudinal regional tau-PET progression modeling on ADNI-derived inputs. The active model code is isolated from baseline and manuscript artifacts so the main experiment can be reproduced from the command line.
 
